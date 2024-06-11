@@ -32,6 +32,9 @@
 
 package org.opensearch.action.admin.cluster.stats;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.opensearch.Version;
 import org.opensearch.action.admin.cluster.node.info.NodeInfo;
 import org.opensearch.action.admin.cluster.node.stats.NodeStats;
 import org.opensearch.action.admin.indices.stats.ShardStats;
@@ -39,6 +42,8 @@ import org.opensearch.action.support.nodes.BaseNodeResponse;
 import org.opensearch.cluster.health.ClusterHealthStatus;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.common.Nullable;
+import org.opensearch.common.settings.ClusterSettings;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 
@@ -50,11 +55,12 @@ import java.io.IOException;
  * @opensearch.internal
  */
 public class ClusterStatsNodeResponse extends BaseNodeResponse {
-
+    private static final Logger log = LogManager.getLogger(ClusterStatsNodeResponse.class);
     private final NodeInfo nodeInfo;
     private final NodeStats nodeStats;
-    private final ShardStats[] shardsStats;
+    private ShardStats[] shardsStats;
     private ClusterHealthStatus clusterStatus;
+    private NodeIndexShardStats nodeIndexShardStats;
 
     public ClusterStatsNodeResponse(StreamInput in) throws IOException {
         super(in);
@@ -64,7 +70,12 @@ public class ClusterStatsNodeResponse extends BaseNodeResponse {
         }
         this.nodeInfo = new NodeInfo(in);
         this.nodeStats = new NodeStats(in);
-        shardsStats = in.readArray(ShardStats::new, ShardStats[]::new);
+        if (in.getVersion().onOrAfter(Version.V_2_13_0)) {
+            this.shardsStats = in.readOptionalArray(ShardStats::new, ShardStats[]::new);
+            this.nodeIndexShardStats = in.readOptionalWriteable(NodeIndexShardStats::new);
+        } else {
+            this.shardsStats = in.readArray(ShardStats::new, ShardStats[]::new);
+        }
     }
 
     public ClusterStatsNodeResponse(
@@ -77,8 +88,27 @@ public class ClusterStatsNodeResponse extends BaseNodeResponse {
         super(node);
         this.nodeInfo = nodeInfo;
         this.nodeStats = nodeStats;
-        this.shardsStats = shardsStats;
         this.clusterStatus = clusterStatus;
+        this.shardsStats = shardsStats;
+    }
+
+    public ClusterStatsNodeResponse(
+        DiscoveryNode node,
+        @Nullable ClusterHealthStatus clusterStatus,
+        NodeInfo nodeInfo,
+        NodeStats nodeStats,
+        ShardStats[] shardsStats,
+        boolean optimized
+    ) {
+        super(node);
+        this.nodeInfo = nodeInfo;
+        this.nodeStats = nodeStats;
+        this.clusterStatus = clusterStatus;
+        if (optimized) {
+            log.info(node.getVersion().toString());
+            this.nodeIndexShardStats = new NodeIndexShardStats(node, shardsStats);
+        }
+        this.shardsStats = shardsStats;
     }
 
     public NodeInfo nodeInfo() {
@@ -101,6 +131,10 @@ public class ClusterStatsNodeResponse extends BaseNodeResponse {
         return this.shardsStats;
     }
 
+    public NodeIndexShardStats getNodeIndexShardStats() {
+        return nodeIndexShardStats;
+    }
+
     public static ClusterStatsNodeResponse readNodeResponse(StreamInput in) throws IOException {
         return new ClusterStatsNodeResponse(in);
     }
@@ -116,6 +150,16 @@ public class ClusterStatsNodeResponse extends BaseNodeResponse {
         }
         nodeInfo.writeTo(out);
         nodeStats.writeTo(out);
-        out.writeArray(shardsStats);
+        if (out.getVersion().onOrAfter(Version.V_2_13_0)) {
+            if (nodeIndexShardStats!=null) {
+                out.writeOptionalArray(null);
+                out.writeOptionalWriteable(nodeIndexShardStats);
+            } else {
+                out.writeOptionalArray(shardsStats);
+                out.writeOptionalWriteable(null);
+            }
+        } else {
+            out.writeArray(shardsStats);
+        }
     }
 }
