@@ -55,6 +55,7 @@ public class ClusterStatsNodeResponse extends BaseNodeResponse {
     private final NodeStats nodeStats;
     private final ShardStats[] shardsStats;
     private ClusterHealthStatus clusterStatus;
+    private final NodeIndexShardStats nodeIndexShardStats;
 
     public ClusterStatsNodeResponse(StreamInput in) throws IOException {
         super(in);
@@ -65,6 +66,7 @@ public class ClusterStatsNodeResponse extends BaseNodeResponse {
         this.nodeInfo = new NodeInfo(in);
         this.nodeStats = new NodeStats(in);
         shardsStats = in.readArray(ShardStats::new, ShardStats[]::new);
+        this.nodeIndexShardStats = new NodeIndexShardStats(in);
     }
 
     public ClusterStatsNodeResponse(
@@ -79,6 +81,7 @@ public class ClusterStatsNodeResponse extends BaseNodeResponse {
         this.nodeStats = nodeStats;
         this.shardsStats = shardsStats;
         this.clusterStatus = clusterStatus;
+        this.nodeIndexShardStats = new NodeIndexShardStats(node, shardsStats);
     }
 
     public NodeInfo nodeInfo() {
@@ -101,6 +104,10 @@ public class ClusterStatsNodeResponse extends BaseNodeResponse {
         return this.shardsStats;
     }
 
+    public NodeIndexShardStats getNodeIndexShardStats() {
+        return nodeIndexShardStats;
+    }
+
     public static ClusterStatsNodeResponse readNodeResponse(StreamInput in) throws IOException {
         return new ClusterStatsNodeResponse(in);
     }
@@ -117,5 +124,6 @@ public class ClusterStatsNodeResponse extends BaseNodeResponse {
         nodeInfo.writeTo(out);
         nodeStats.writeTo(out);
         out.writeArray(shardsStats);
+        nodeIndexShardStats.writeTo(out);
     }
 }
