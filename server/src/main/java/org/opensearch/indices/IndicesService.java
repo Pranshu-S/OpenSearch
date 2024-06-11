@@ -168,17 +168,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -622,7 +612,11 @@ public class IndicesService extends AbstractLifecycleComponent
                     break;
             }
         }
-
+        if (Arrays.stream(flags.getLevels()).anyMatch(NodeIndicesStats.levels.nodes.name()::equals) ||
+            Arrays.stream(flags.getLevels()).anyMatch(NodeIndicesStats.levels.indices.name()::equals) ||
+            Arrays.stream(flags.getLevels()).anyMatch(NodeIndicesStats.levels.shards.name()::equals)) {
+            return new NodeIndicesStats(commonStats, statsByShard(this, flags), searchRequestStats, flags.getLevels());
+        }
         return new NodeIndicesStats(commonStats, statsByShard(this, flags), searchRequestStats);
     }
 
