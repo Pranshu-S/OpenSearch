@@ -12,7 +12,6 @@ import org.opensearch.action.admin.indices.stats.CommonStats;
 import org.opensearch.action.admin.indices.stats.ShardStats;
 import org.opensearch.action.support.nodes.BaseNodeResponse;
 import org.opensearch.cluster.node.DiscoveryNode;
-import org.opensearch.common.Nullable;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.index.cache.query.QueryCacheStats;
@@ -26,6 +25,9 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Node level statistics used for ClusterStatsIndices for _cluster/stats call.
+ */
 public class NodeIndexShardStats extends BaseNodeResponse {
 
     DocsStats docs;
@@ -34,7 +36,7 @@ public class NodeIndexShardStats extends BaseNodeResponse {
     QueryCacheStats queryCache;
     CompletionStats completion;
     SegmentsStats segments;
-    Map<String, ClusterStatsIndices.ShardStats> indexCountMap;
+    Map<String, ClusterStatsIndices.ShardStats> indexStatsMap;
 
     protected NodeIndexShardStats(StreamInput in) throws IOException {
         super(in);
@@ -44,7 +46,7 @@ public class NodeIndexShardStats extends BaseNodeResponse {
         queryCache = in.readOptionalWriteable(QueryCacheStats::new);
         completion = in.readOptionalWriteable(CompletionStats::new);
         segments = in.readOptionalWriteable(SegmentsStats::new);
-        indexCountMap = in.readMap(StreamInput::readString, ClusterStatsIndices.ShardStats::new);
+        indexStatsMap = in.readMap(StreamInput::readString, ClusterStatsIndices.ShardStats::new);
     }
 
     protected NodeIndexShardStats(DiscoveryNode node, ShardStats[] indexShardsStats) {
@@ -56,14 +58,14 @@ public class NodeIndexShardStats extends BaseNodeResponse {
         this.queryCache = new QueryCacheStats();
         this.completion = new CompletionStats();
         this.segments = new SegmentsStats();
-        this.indexCountMap = new HashMap<>();
+        this.indexStatsMap = new HashMap<>();
 
         // Index Level Stats
         for (org.opensearch.action.admin.indices.stats.ShardStats shardStats : indexShardsStats) {
-            ClusterStatsIndices.ShardStats indexShardStats = this.indexCountMap.get(shardStats.getShardRouting().getIndexName());
+            ClusterStatsIndices.ShardStats indexShardStats = this.indexStatsMap.get(shardStats.getShardRouting().getIndexName());
             if (indexShardStats == null) {
                 indexShardStats = new ClusterStatsIndices.ShardStats();
-                this.indexCountMap.put(shardStats.getShardRouting().getIndexName(), indexShardStats);
+                this.indexStatsMap.put(shardStats.getShardRouting().getIndexName(), indexShardStats);
             }
 
             indexShardStats.total++;
@@ -92,6 +94,6 @@ public class NodeIndexShardStats extends BaseNodeResponse {
         out.writeOptionalWriteable(queryCache);
         out.writeOptionalWriteable(completion);
         out.writeOptionalWriteable(segments);
-        out.writeMap(indexCountMap, StreamOutput::writeString, (stream, stats) -> stats.writeTo(stream));
+        out.writeMap(indexStatsMap, StreamOutput::writeString, (stream, stats) -> stats.writeTo(stream));
     }
 }

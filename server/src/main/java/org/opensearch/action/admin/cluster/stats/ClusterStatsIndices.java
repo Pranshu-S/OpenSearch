@@ -81,7 +81,7 @@ public class ClusterStatsIndices implements ToXContentFragment {
 
         for (ClusterStatsNodeResponse r : nodeResponses) {
 
-            r.getNodeIndexShardStats().indexCountMap.forEach(
+            r.getNodeIndexShardStats().indexStatsMap.forEach(
                 (index, indexCountStats) -> countsPerIndex.merge(index, indexCountStats, (v1, v2) -> {
                     v1.addStatsFrom(v2);
                     return v1;

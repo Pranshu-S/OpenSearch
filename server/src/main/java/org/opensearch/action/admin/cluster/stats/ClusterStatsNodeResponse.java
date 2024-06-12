@@ -32,6 +32,7 @@
 
 package org.opensearch.action.admin.cluster.stats;
 
+import org.opensearch.Version;
 import org.opensearch.action.admin.cluster.node.info.NodeInfo;
 import org.opensearch.action.admin.cluster.node.stats.NodeStats;
 import org.opensearch.action.admin.indices.stats.ShardStats;
@@ -65,8 +66,13 @@ public class ClusterStatsNodeResponse extends BaseNodeResponse {
         }
         this.nodeInfo = new NodeInfo(in);
         this.nodeStats = new NodeStats(in);
-        shardsStats = in.readArray(ShardStats::new, ShardStats[]::new);
-        this.nodeIndexShardStats = new NodeIndexShardStats(in);
+        if (in.getVersion().onOrAfter(Version.V_2_13_0)) {
+            this.nodeIndexShardStats = new NodeIndexShardStats(in);
+            shardsStats = null;
+        } else {
+            shardsStats = in.readArray(ShardStats::new, ShardStats[]::new);
+            nodeIndexShardStats = null;
+        }
     }
 
     public ClusterStatsNodeResponse(
@@ -123,7 +129,10 @@ public class ClusterStatsNodeResponse extends BaseNodeResponse {
         }
         nodeInfo.writeTo(out);
         nodeStats.writeTo(out);
-        out.writeArray(shardsStats);
-        nodeIndexShardStats.writeTo(out);
+        if (out.getVersion().onOrAfter(Version.V_2_13_0)) {
+            nodeIndexShardStats.writeTo(out);
+        } else {
+            out.writeArray(shardsStats);
+        }
     }
 }
