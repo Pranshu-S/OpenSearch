@@ -32,6 +32,7 @@
 
 package org.opensearch.action.admin.cluster.stats;
 
+import org.opensearch.action.admin.indices.stats.CommonStats;
 import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -80,20 +81,44 @@ public class ClusterStatsIndices implements ToXContentFragment {
         this.segments = new SegmentsStats();
 
         for (ClusterStatsNodeResponse r : nodeResponses) {
+            // For responses from nodes before 2.13.
+            if (r.shardsStats() != null) {
+                for (org.opensearch.action.admin.indices.stats.ShardStats shardStats : r.shardsStats()) {
+                    ShardStats indexShardStats = countsPerIndex.get(shardStats.getShardRouting().getIndexName());
+                    if (indexShardStats == null) {
+                        indexShardStats = new ShardStats();
+                        countsPerIndex.put(shardStats.getShardRouting().getIndexName(), indexShardStats);
+                    }
 
-            r.getNodeIndexShardStats().indexStatsMap.forEach(
-                (index, indexCountStats) -> countsPerIndex.merge(index, indexCountStats, (v1, v2) -> {
-                    v1.addStatsFrom(v2);
-                    return v1;
-                })
-            );
+                    indexShardStats.total++;
 
-            docs.add(r.getNodeIndexShardStats().docs);
-            store.add(r.getNodeIndexShardStats().store);
-            fieldData.add(r.getNodeIndexShardStats().fieldData);
-            queryCache.add(r.getNodeIndexShardStats().queryCache);
-            completion.add(r.getNodeIndexShardStats().completion);
-            segments.add(r.getNodeIndexShardStats().segments);
+                    CommonStats shardCommonStats = shardStats.getStats();
+
+                    if (shardStats.getShardRouting().primary()) {
+                        indexShardStats.primaries++;
+                        docs.add(shardCommonStats.docs);
+                    }
+                    store.add(shardCommonStats.store);
+                    fieldData.add(shardCommonStats.fieldData);
+                    queryCache.add(shardCommonStats.queryCache);
+                    completion.add(shardCommonStats.completion);
+                    segments.add(shardCommonStats.segments);
+                }
+            } else {
+                r.getNodeIndexShardStats().indexStatsMap.forEach(
+                    (index, indexCountStats) -> countsPerIndex.merge(index, indexCountStats, (v1, v2) -> {
+                        v1.addStatsFrom(v2);
+                        return v1;
+                    })
+                );
+
+                docs.add(r.getNodeIndexShardStats().docs);
+                store.add(r.getNodeIndexShardStats().store);
+                fieldData.add(r.getNodeIndexShardStats().fieldData);
+                queryCache.add(r.getNodeIndexShardStats().queryCache);
+                completion.add(r.getNodeIndexShardStats().completion);
+                segments.add(r.getNodeIndexShardStats().segments);
+            }
         }
 
         shards = new ShardStats();
