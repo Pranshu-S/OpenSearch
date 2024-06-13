@@ -34,6 +34,7 @@ package org.opensearch.rest.action.admin.cluster;
 
 import org.opensearch.action.admin.cluster.stats.ClusterStatsRequest;
 import org.opensearch.client.node.NodeClient;
+import org.opensearch.common.settings.Settings;
 import org.opensearch.rest.BaseRestHandler;
 import org.opensearch.rest.RestRequest;
 import org.opensearch.rest.action.RestActions.NodesResponseRestListener;
@@ -52,6 +53,11 @@ import static org.opensearch.rest.RestRequest.Method.GET;
  */
 public class RestClusterStatsAction extends BaseRestHandler {
 
+    private volatile boolean defaultMappingAnalysisStatsIncluded;
+
+    public RestClusterStatsAction(Settings settings) {
+    }
+
     @Override
     public List<Route> routes() {
         return unmodifiableList(asList(new Route(GET, "/_cluster/stats"), new Route(GET, "/_cluster/stats/nodes/{nodeId}")));
@@ -66,6 +72,10 @@ public class RestClusterStatsAction extends BaseRestHandler {
     public RestChannelConsumer prepareRequest(final RestRequest request, final NodeClient client) throws IOException {
         ClusterStatsRequest clusterStatsRequest = new ClusterStatsRequest().nodesIds(request.paramAsStringArray("nodeId", null));
         clusterStatsRequest.timeout(request.param("timeout"));
+
+        clusterStatsRequest.setIncludeMappingStats(request.paramAsBoolean("include_mapping_stats", true));
+        clusterStatsRequest.setIncludeAnalysisStats(request.paramAsBoolean("include_analysis_stats", true));
+
         return channel -> client.admin().cluster().clusterStats(clusterStatsRequest, new NodesResponseRestListener<>(channel));
     }
 
