@@ -72,6 +72,8 @@ public class FeatureFlags {
      */
     public static final String REMOTE_PUBLICATION_EXPERIMENTAL = "opensearch.experimental.feature.remote_store.publication.enabled";
 
+    public static final String OPTIMIZED_CLUSTER_STATS = "opensearch.experimental.optimization.cluster_stats.enabled";
+
     public static final Setting<Boolean> REMOTE_STORE_MIGRATION_EXPERIMENTAL_SETTING = Setting.boolSetting(
         REMOTE_STORE_MIGRATION_EXPERIMENTAL,
         false,
@@ -99,6 +101,15 @@ public class FeatureFlags {
         false,
         Property.NodeScope
     );
+
+    public static final Setting<Boolean> OPTIMIZED_CLUSTER_STATS_SETTING = Setting.boolSetting(
+        OPTIMIZED_CLUSTER_STATS,
+        false,
+        Property.NodeScope,
+        Property.Dynamic
+    );
+
+
 
     private static final List<Setting<Boolean>> ALL_FEATURE_FLAG_SETTINGS = List.of(
         REMOTE_STORE_MIGRATION_EXPERIMENTAL_SETTING,
