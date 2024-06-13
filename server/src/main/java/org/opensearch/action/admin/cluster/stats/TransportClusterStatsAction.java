@@ -46,6 +46,7 @@ import org.opensearch.cluster.health.ClusterHealthStatus;
 import org.opensearch.cluster.health.ClusterStateHealth;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.index.IndexService;
@@ -123,14 +124,28 @@ public class TransportClusterStatsAction extends TransportNodesAction<
                 + " the cluster state that are too slow for a transport thread"
         );
         ClusterState state = clusterService.state();
-        return new ClusterStatsResponse(
-            System.currentTimeMillis(),
-            state.metadata().clusterUUID(),
-            clusterService.getClusterName(),
-            responses,
-            failures,
-            state
-        );
+
+        if (FeatureFlags.isEnabled(FeatureFlags.OPTIMIZED_CLUSTER_STATS_SETTING)) {
+            return new ClusterStatsResponse(
+                System.currentTimeMillis(),
+                state.metadata().clusterUUID(),
+                clusterService.getClusterName(),
+                responses,
+                failures,
+                state,
+                request
+            );
+        } else {
+            return new ClusterStatsResponse(
+                System.currentTimeMillis(),
+                state.metadata().clusterUUID(),
+                clusterService.getClusterName(),
+                responses,
+                failures,
+                state
+            );
+        }
+
     }
 
     @Override

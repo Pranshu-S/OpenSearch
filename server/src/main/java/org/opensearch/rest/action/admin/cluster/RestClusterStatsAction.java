@@ -66,6 +66,10 @@ public class RestClusterStatsAction extends BaseRestHandler {
     public RestChannelConsumer prepareRequest(final RestRequest request, final NodeClient client) throws IOException {
         ClusterStatsRequest clusterStatsRequest = new ClusterStatsRequest().nodesIds(request.paramAsStringArray("nodeId", null));
         clusterStatsRequest.timeout(request.param("timeout"));
+
+        clusterStatsRequest.setIncludeMappingStats(request.paramAsBoolean("include_mapping_stats", false));
+        clusterStatsRequest.setIncludeAnalysisStats(request.paramAsBoolean("include_analysis_stats", false));
+
         return channel -> client.admin().cluster().clusterStats(clusterStatsRequest, new NodesResponseRestListener<>(channel));
     }
 
