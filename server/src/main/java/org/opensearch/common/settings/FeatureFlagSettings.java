@@ -37,6 +37,7 @@ public class FeatureFlagSettings extends AbstractScopedSettings {
         FeatureFlags.TIERED_REMOTE_INDEX_SETTING,
         FeatureFlags.REMOTE_STORE_MIGRATION_EXPERIMENTAL_SETTING,
         FeatureFlags.PLUGGABLE_CACHE_SETTING,
-        FeatureFlags.REMOTE_PUBLICATION_EXPERIMENTAL_SETTING
+        FeatureFlags.REMOTE_PUBLICATION_EXPERIMENTAL_SETTING,
+        FeatureFlags.OPTIMIZED_CLUSTER_STATS_SETTING
     );
 }
