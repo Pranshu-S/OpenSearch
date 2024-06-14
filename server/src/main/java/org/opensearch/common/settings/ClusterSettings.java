@@ -749,7 +749,9 @@ public final class ClusterSettings extends AbstractScopedSettings {
                 RemoteStoreSettings.CLUSTER_REMOTE_STORE_PATH_HASH_ALGORITHM_SETTING,
                 RemoteStoreSettings.CLUSTER_REMOTE_MAX_TRANSLOG_READERS,
                 RemoteStoreSettings.CLUSTER_REMOTE_STORE_TRANSLOG_METADATA,
-                SearchService.CLUSTER_ALLOW_DERIVED_FIELD_SETTING
+                SearchService.CLUSTER_ALLOW_DERIVED_FIELD_SETTING,
+
+                IndicesService.OPTIMIZED_NODES_STATS_SETTING
             )
         )
     );

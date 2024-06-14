@@ -237,6 +237,17 @@ public class IndicesService extends AbstractLifecycleComponent
         Setting.Property.NodeScope
     );
 
+    public static final String OPTIMIZED_NODES_STATS = "opensearch.experimental.optimization.nodes_stats.enabled";
+
+    public static final Setting<Boolean> OPTIMIZED_NODES_STATS_SETTING = Setting.boolSetting(
+        OPTIMIZED_NODES_STATS,
+        false,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    public volatile boolean optimizedNodesStatsEnabled;
+
     /**
      * Used to specify SEGMENT replication type as the default replication strategy for all indices in a cluster. By default, this is false.
      */
@@ -433,6 +444,8 @@ public class IndicesService extends AbstractLifecycleComponent
                 circuitBreakerService.getBreaker(CircuitBreaker.FIELDDATA).addWithoutBreaking(-sizeInBytes);
             }
         });
+        this.optimizedNodesStatsEnabled = OPTIMIZED_NODES_STATS_SETTING.get(settings);
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(OPTIMIZED_NODES_STATS_SETTING, this::setOptimizedNodesStats);
         this.cleanInterval = INDICES_CACHE_CLEAN_INTERVAL_SETTING.get(settings);
         this.cacheCleaner = new CacheCleaner(indicesFieldDataCache, logger, threadPool, this.cleanInterval);
         this.metaStateService = metaStateService;
@@ -622,7 +635,9 @@ public class IndicesService extends AbstractLifecycleComponent
                     break;
             }
         }
-
+        if (optimizedNodesStatsEnabled) {
+            return new NodeIndicesStats(commonStats, statsByShard(this, flags), searchRequestStats, flags.getLevels());
+        }
         return new NodeIndicesStats(commonStats, statsByShard(this, flags), searchRequestStats);
     }
 
@@ -1894,6 +1909,10 @@ public class IndicesService extends AbstractLifecycleComponent
 
     private void setIdFieldDataEnabled(boolean value) {
         this.idFieldDataEnabled = value;
+    }
+
+    private void setOptimizedNodesStats(boolean optimizedNodesStatsEnabled) {
+        this.optimizedNodesStatsEnabled = optimizedNodesStatsEnabled;
     }
 
     private void updateDanglingIndicesInfo(Index index) {
