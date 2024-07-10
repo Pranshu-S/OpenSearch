@@ -32,6 +32,7 @@
 
 package org.opensearch.indices;
 
+import org.opensearch.Version;
 import org.opensearch.action.admin.indices.stats.CommonStats;
 import org.opensearch.action.admin.indices.stats.IndexShardStats;
 import org.opensearch.action.admin.indices.stats.ShardStats;
@@ -63,6 +64,7 @@ import org.opensearch.search.suggest.completion.CompletionStats;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -74,23 +76,22 @@ import java.util.Map;
  */
 @PublicApi(since = "1.0.0")
 public class NodeIndicesStats implements Writeable, ToXContentFragment {
-    private CommonStats stats;
-    private Map<Index, List<IndexShardStats>> statsByShard;
+    protected CommonStats stats;
+    protected Map<Index, CommonStats> statsByIndex;
+    protected Map<Index, List<IndexShardStats>> statsByShard;
 
     public NodeIndicesStats(StreamInput in) throws IOException {
         stats = new CommonStats(in);
-        if (in.readBoolean()) {
-            int entries = in.readVInt();
-            statsByShard = new HashMap<>();
-            for (int i = 0; i < entries; i++) {
-                Index index = new Index(in);
-                int indexShardListSize = in.readVInt();
-                List<IndexShardStats> indexShardStats = new ArrayList<>(indexShardListSize);
-                for (int j = 0; j < indexShardListSize; j++) {
-                    indexShardStats.add(new IndexShardStats(in));
-                }
-                statsByShard.put(index, indexShardStats);
+        if (in.getVersion().onOrAfter(Version.V_2_16_0)) {
+            // contains statsByIndex
+            if (in.readBoolean()) {
+                statsByIndex = new HashMap<>();
+                readStatsByIndex(in);
             }
+        }
+        if (in.readBoolean()) {
+            statsByShard = new HashMap<>();
+            readStatsByShards(in);
         }
     }
 
@@ -109,6 +110,57 @@ public class NodeIndicesStats implements Writeable, ToXContentFragment {
         }
         if (this.stats.search != null) {
             this.stats.search.setSearchRequestStats(searchRequestStats);
+        }
+    }
+
+    public NodeIndicesStats(
+        CommonStats oldStats,
+        Map<Index, List<IndexShardStats>> statsByShard,
+        SearchRequestStats searchRequestStats,
+        String[] levels
+    ) {
+        // make a total common stats from old ones and current ones
+        this.stats = oldStats;
+        for (List<IndexShardStats> shardStatsList : statsByShard.values()) {
+            for (IndexShardStats indexShardStats : shardStatsList) {
+                for (ShardStats shardStats : indexShardStats.getShards()) {
+                    stats.add(shardStats.getStats());
+                }
+            }
+        }
+
+        if (this.stats.search != null) {
+            this.stats.search.setSearchRequestStats(searchRequestStats);
+        }
+
+        if (levels != null) {
+            if (Arrays.stream(levels).anyMatch(Fields.INDICES::equals)) {
+                this.statsByIndex = createStatsByIndex(statsByShard);
+            } else if (Arrays.stream(levels).anyMatch(Fields.SHARDS::equals)) {
+                this.statsByShard = statsByShard;
+            }
+        }
+    }
+
+    private void readStatsByIndex(StreamInput in) throws IOException {
+        int indexEntries = in.readVInt();
+        for (int i = 0; i < indexEntries; i++) {
+            Index index = new Index(in);
+            CommonStats commonStats = new CommonStats(in);
+            statsByIndex.put(index, commonStats);
+        }
+    }
+
+    private void readStatsByShards(StreamInput in) throws IOException {
+        int entries = in.readVInt();
+        for (int i = 0; i < entries; i++) {
+            Index index = new Index(in);
+            int indexShardListSize = in.readVInt();
+            List<IndexShardStats> indexShardStats = new ArrayList<>(indexShardListSize);
+            for (int j = 0; j < indexShardListSize; j++) {
+                indexShardStats.add(new IndexShardStats(in));
+            }
+            statsByShard.put(index, indexShardStats);
         }
     }
 
@@ -195,7 +247,31 @@ public class NodeIndicesStats implements Writeable, ToXContentFragment {
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         stats.writeTo(out);
+
+        if (out.getVersion().onOrAfter(Version.V_2_16_0)) {
+            out.writeBoolean(statsByIndex != null);
+            if (statsByIndex != null) {
+                writeStatsByIndex(out);
+            }
+        }
+
         out.writeBoolean(statsByShard != null);
+        if (statsByShard != null) {
+            writeStatsByShards(out);
+        }
+    }
+
+    private void writeStatsByIndex(StreamOutput out) throws IOException {
+        if (statsByIndex != null) {
+            out.writeVInt(statsByIndex.size());
+            for (Map.Entry<Index, CommonStats> entry : statsByIndex.entrySet()) {
+                entry.getKey().writeTo(out);
+                entry.getValue().writeTo(out);
+            }
+        }
+    }
+
+    private void writeStatsByShards(StreamOutput out) throws IOException {
         if (statsByShard != null) {
             out.writeVInt(statsByShard.size());
             for (Map.Entry<Index, List<IndexShardStats>> entry : statsByShard.entrySet()) {
@@ -222,27 +298,33 @@ public class NodeIndicesStats implements Writeable, ToXContentFragment {
         builder.startObject(Fields.INDICES);
         stats.toXContent(builder, params);
 
-        if ("indices".equals(level)) {
-            Map<Index, CommonStats> indexStats = createStatsByIndex();
+        if (Fields.INDICES.equals(level)) {
+            if (statsByIndex == null && statsByShard != null) {
+                statsByIndex = createStatsByIndex(statsByShard);
+            }
             builder.startObject(Fields.INDICES);
-            for (Map.Entry<Index, CommonStats> entry : indexStats.entrySet()) {
-                builder.startObject(entry.getKey().getName());
-                entry.getValue().toXContent(builder, params);
-                builder.endObject();
+            if (statsByIndex != null) {
+                for (Map.Entry<Index, CommonStats> entry : statsByIndex.entrySet()) {
+                    builder.startObject(entry.getKey().getName());
+                    entry.getValue().toXContent(builder, params);
+                    builder.endObject();
+                }
             }
             builder.endObject();
-        } else if ("shards".equals(level)) {
+        } else if (Fields.SHARDS.equals(level)) {
             builder.startObject("shards");
-            for (Map.Entry<Index, List<IndexShardStats>> entry : statsByShard.entrySet()) {
-                builder.startArray(entry.getKey().getName());
-                for (IndexShardStats indexShardStats : entry.getValue()) {
-                    builder.startObject().startObject(String.valueOf(indexShardStats.getShardId().getId()));
-                    for (ShardStats shardStats : indexShardStats.getShards()) {
-                        shardStats.toXContent(builder, params);
+            if (statsByShard != null) {
+                for (Map.Entry<Index, List<IndexShardStats>> entry : statsByShard.entrySet()) {
+                    builder.startArray(entry.getKey().getName());
+                    for (IndexShardStats indexShardStats : entry.getValue()) {
+                        builder.startObject().startObject(String.valueOf(indexShardStats.getShardId().getId()));
+                        for (ShardStats shardStats : indexShardStats.getShards()) {
+                            shardStats.toXContent(builder, params);
+                        }
+                        builder.endObject().endObject();
                     }
-                    builder.endObject().endObject();
+                    builder.endArray();
                 }
-                builder.endArray();
             }
             builder.endObject();
         }
@@ -251,7 +333,7 @@ public class NodeIndicesStats implements Writeable, ToXContentFragment {
         return builder;
     }
 
-    private Map<Index, CommonStats> createStatsByIndex() {
+    private Map<Index, CommonStats> createStatsByIndex(Map<Index, List<IndexShardStats>> statsByShard) {
         Map<Index, CommonStats> statsMap = new HashMap<>();
         for (Map.Entry<Index, List<IndexShardStats>> entry : statsByShard.entrySet()) {
             if (!statsMap.containsKey(entry.getKey())) {
@@ -281,7 +363,8 @@ public class NodeIndicesStats implements Writeable, ToXContentFragment {
      *
      * @opensearch.internal
      */
-    static final class Fields {
-        static final String INDICES = "indices";
+    public static final class Fields {
+        public static final String INDICES = "indices";
+        public static final String SHARDS = "shards";
     }
 }
