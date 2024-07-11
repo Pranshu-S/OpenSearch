@@ -127,15 +127,15 @@ public class NodesStatsRequest extends BaseNodesRequest<NodesStatsRequest> {
         return this;
     }
 
-    /**
-     * Use Optimized Response filtered based on level
-     */
-    public NodesStatsRequest useOptimizedNodeIndicesStats(boolean useOptimizedNodeIndicesStats) {
-        if (this.indices != null) {
-            this.indices.optimizeNodeIndicesStatsOnLevel(true);
-        }
-        return this;
-    }
+//    /**
+//     * Use Optimized Response filtered based on level
+//     */
+//    public NodesStatsRequest useOptimizedNodeIndicesStats(boolean useOptimizedNodeIndicesStats) {
+//        if (this.indices != null) {
+//            this.indices.optimizeNodeIndicesStatsOnLevel(true);
+//        }
+//        return this;
+//    }
 
     /**
      * Get the names of requested metrics, excluding indices, which are

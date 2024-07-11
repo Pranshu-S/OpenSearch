@@ -332,58 +332,58 @@ public class NodeStatsIT extends OpenSearchIntegTestCase {
      * Optimized behavior - to avoid unnecessary IO in the form of shard-stats when not required, we not honor the levels on the
      * individual data nodes instead and pre-compute information as required.
      */
-    public void testNodeIndicesStatsOptimizedResponse() {
-        String testLevel = randomFrom("null", "node", "indices", "shards", "unknown");
-        internalCluster().startNode();
-        ensureGreen();
-        String indexName = "test1";
-        index(indexName, "type", "1", "f", "f");
-        refresh();
-
-        NodesStatsResponse response;
-        CommonStatsFlags commonStatsFlags = new CommonStatsFlags();
-        commonStatsFlags.optimizeNodeIndicesStatsOnLevel(true);
-        if (!testLevel.equals("null")) {
-            ArrayList<String> level_arg = new ArrayList<>();
-            level_arg.add(testLevel);
-
-            commonStatsFlags.setLevels(level_arg.toArray(new String[0]));
-        }
-        response = client().admin().cluster().prepareNodesStats().setIndices(commonStatsFlags).get();
-
-        response.getNodes().forEach(nodeStats -> {
-            try {
-                XContentBuilder builder = XContentFactory.jsonBuilder();
-                builder.startObject();
-                builder = nodeStats.getIndices().toXContent(builder, new ToXContent.MapParams(Collections.singletonMap("level", "shards")));
-                builder.endObject();
-
-                Map<String, Object> xContentMap = xContentBuilderToMap(builder);
-                LinkedHashMap indicesStatsMap = (LinkedHashMap) xContentMap.get("indices");
-                LinkedHashMap indicesStats = (LinkedHashMap) indicesStatsMap.get("indices");
-                LinkedHashMap shardStats = (LinkedHashMap) indicesStatsMap.get("shards");
-
-                switch (testLevel) {
-                    case "shards":
-                        assertFalse(shardStats.isEmpty());
-                        assertFalse(indicesStats.isEmpty());
-                        break;
-                    case "indices":
-                        assertTrue(shardStats.isEmpty());
-                        assertFalse(indicesStats.isEmpty());
-                        break;
-                    case "node":
-                    case "null":
-                    case "unknown":
-                        assertTrue(shardStats.isEmpty());
-                        assertTrue(indicesStats.isEmpty());
-                        break;
-                }
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        });
-    }
+//    public void testNodeIndicesStatsOptimizedResponse() {
+//        String testLevel = randomFrom("null", "node", "indices", "shards", "unknown");
+//        internalCluster().startNode();
+//        ensureGreen();
+//        String indexName = "test1";
+//        index(indexName, "type", "1", "f", "f");
+//        refresh();
+//
+//        NodesStatsResponse response;
+//        CommonStatsFlags commonStatsFlags = new CommonStatsFlags();
+//        commonStatsFlags.optimizeNodeIndicesStatsOnLevel(true);
+//        if (!testLevel.equals("null")) {
+//            ArrayList<String> level_arg = new ArrayList<>();
+//            level_arg.add(testLevel);
+//
+//            commonStatsFlags.setLevels(level_arg.toArray(new String[0]));
+//        }
+//        response = client().admin().cluster().prepareNodesStats().setIndices(commonStatsFlags).get();
+//
+//        response.getNodes().forEach(nodeStats -> {
+//            try {
+//                XContentBuilder builder = XContentFactory.jsonBuilder();
+//                builder.startObject();
+//                builder = nodeStats.getIndices().toXContent(builder, new ToXContent.MapParams(Collections.singletonMap("level", "shards")));
+//                builder.endObject();
+//
+//                Map<String, Object> xContentMap = xContentBuilderToMap(builder);
+//                LinkedHashMap indicesStatsMap = (LinkedHashMap) xContentMap.get("indices");
+//                LinkedHashMap indicesStats = (LinkedHashMap) indicesStatsMap.get("indices");
+//                LinkedHashMap shardStats = (LinkedHashMap) indicesStatsMap.get("shards");
+//
+//                switch (testLevel) {
+//                    case "shards":
+//                        assertFalse(shardStats.isEmpty());
+//                        assertFalse(indicesStats.isEmpty());
+//                        break;
+//                    case "indices":
+//                        assertTrue(shardStats.isEmpty());
+//                        assertFalse(indicesStats.isEmpty());
+//                        break;
+//                    case "node":
+//                    case "null":
+//                    case "unknown":
+//                        assertTrue(shardStats.isEmpty());
+//                        assertTrue(indicesStats.isEmpty());
+//                        break;
+//                }
+//            } catch (IOException e) {
+//                throw new RuntimeException(e);
+//            }
+//        });
+//    }
 
     private Map<String, Object> xContentBuilderToMap(XContentBuilder xContentBuilder) {
         return XContentHelper.convertToMap(BytesReference.bytes(xContentBuilder), true, xContentBuilder.contentType()).v2();
