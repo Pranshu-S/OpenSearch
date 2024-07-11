@@ -102,7 +102,7 @@ public class CommonStatsFlags implements Writeable, Cloneable {
         includeUnloadedSegments = in.readBoolean();
         includeAllShardIndexingPressureTrackers = in.readBoolean();
         includeOnlyTopIndexingPressureMetrics = in.readBoolean();
-        if (in.getVersion().onOrAfter(Version.V_2_16_0)) {
+        if (in.getVersion().onOrAfter(Version.V_3_0_0)) {
             optimizeNodeIndicesStatsOnLevel = in.readOptionalBoolean();
             logger.info("In.Version - " +  in.getVersion());
             logger.info("In.Flag - " +  optimizeNodeIndicesStatsOnLevel);
@@ -131,7 +131,7 @@ public class CommonStatsFlags implements Writeable, Cloneable {
         out.writeBoolean(includeUnloadedSegments);
         out.writeBoolean(includeAllShardIndexingPressureTrackers);
         out.writeBoolean(includeOnlyTopIndexingPressureMetrics);
-        if (out.getVersion().onOrAfter(Version.V_2_16_0)) {
+        if (out.getVersion().onOrAfter(Version.V_3_0_0)) {
             out.writeOptionalBoolean(optimizeNodeIndicesStatsOnLevel);
             logger.info("Out.Version - " +  out.getVersion());
             logger.info("Out.Flag - " +  optimizeNodeIndicesStatsOnLevel);
