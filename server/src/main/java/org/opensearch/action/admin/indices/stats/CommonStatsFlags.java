@@ -101,9 +101,9 @@ public class CommonStatsFlags implements Writeable, Cloneable {
             includeCaches = in.readEnumSet(CacheType.class);
             levels = in.readStringArray();
         }
-//        if (in.getVersion().onOrAfter(Version.V_2_16_0)) {
-//            optimizeNodeIndicesStatsOnLevel = in.readBoolean();
-//        }
+        if (in.getVersion().onOrAfter(Version.V_2_16_0)) {
+            optimizeNodeIndicesStatsOnLevel = in.readBoolean();
+        }
     }
 
     @Override
@@ -128,9 +128,9 @@ public class CommonStatsFlags implements Writeable, Cloneable {
             out.writeEnumSet(includeCaches);
             out.writeStringArrayNullable(levels);
         }
-//        if (out.getVersion().onOrAfter(Version.V_2_16_0)) {
-//            out.writeBoolean(optimizeNodeIndicesStatsOnLevel);
-//        }
+        if (out.getVersion().onOrAfter(Version.V_2_16_0)) {
+            out.writeBoolean(optimizeNodeIndicesStatsOnLevel);
+        }
     }
 
     /**
@@ -147,6 +147,7 @@ public class CommonStatsFlags implements Writeable, Cloneable {
         includeOnlyTopIndexingPressureMetrics = false;
         includeCaches = EnumSet.allOf(CacheType.class);
         levels = new String[0];
+        optimizeNodeIndicesStatsOnLevel = false;
         return this;
     }
 
@@ -164,6 +165,7 @@ public class CommonStatsFlags implements Writeable, Cloneable {
         includeOnlyTopIndexingPressureMetrics = false;
         includeCaches = EnumSet.noneOf(CacheType.class);
         levels = new String[0];
+        optimizeNodeIndicesStatsOnLevel = false;
         return this;
     }
 
