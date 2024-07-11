@@ -82,16 +82,18 @@ public class NodeIndicesStats implements Writeable, ToXContentFragment {
 
     public NodeIndicesStats(StreamInput in) throws IOException {
         stats = new CommonStats(in);
-        if (in.getVersion().onOrAfter(Version.V_2_16_0)) {
-            // contains statsByIndex
-            if (in.readBoolean()) {
-                statsByIndex = new HashMap<>();
-                readStatsByIndex(in);
-            }
-        }
         if (in.readBoolean()) {
+            int entries = in.readVInt();
             statsByShard = new HashMap<>();
-            readStatsByShards(in);
+            for (int i = 0; i < entries; i++) {
+                Index index = new Index(in);
+                int indexShardListSize = in.readVInt();
+                List<IndexShardStats> indexShardStats = new ArrayList<>(indexShardListSize);
+                for (int j = 0; j < indexShardListSize; j++) {
+                    indexShardStats.add(new IndexShardStats(in));
+                }
+                statsByShard.put(index, indexShardStats);
+            }
         }
     }
 
@@ -247,17 +249,16 @@ public class NodeIndicesStats implements Writeable, ToXContentFragment {
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         stats.writeTo(out);
-
-        if (out.getVersion().onOrAfter(Version.V_2_16_0)) {
-            out.writeBoolean(statsByIndex != null);
-            if (statsByIndex != null) {
-                writeStatsByIndex(out);
-            }
-        }
-
         out.writeBoolean(statsByShard != null);
         if (statsByShard != null) {
-            writeStatsByShards(out);
+            out.writeVInt(statsByShard.size());
+            for (Map.Entry<Index, List<IndexShardStats>> entry : statsByShard.entrySet()) {
+                entry.getKey().writeTo(out);
+                out.writeVInt(entry.getValue().size());
+                for (IndexShardStats indexShardStats : entry.getValue()) {
+                    indexShardStats.writeTo(out);
+                }
+            }
         }
     }
 
