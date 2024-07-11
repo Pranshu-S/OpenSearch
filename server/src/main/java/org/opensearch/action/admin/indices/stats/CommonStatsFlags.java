@@ -32,6 +32,8 @@
 
 package org.opensearch.action.admin.indices.stats;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.opensearch.Version;
 import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.common.cache.CacheType;
@@ -39,6 +41,7 @@ import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.indices.IndicesService;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -56,6 +59,7 @@ public class CommonStatsFlags implements Writeable, Cloneable {
     public static final CommonStatsFlags ALL = new CommonStatsFlags().all();
     public static final CommonStatsFlags NONE = new CommonStatsFlags().clear();
 
+    private static final Logger logger = LogManager.getLogger(CommonStatsFlags.class);
     private EnumSet<Flag> flags = EnumSet.allOf(Flag.class);
     private String[] groups = null;
     private String[] fieldDataFields = null;
@@ -100,6 +104,8 @@ public class CommonStatsFlags implements Writeable, Cloneable {
         includeOnlyTopIndexingPressureMetrics = in.readBoolean();
         if (in.getVersion().onOrAfter(Version.V_2_16_0)) {
             optimizeNodeIndicesStatsOnLevel = in.readOptionalBoolean();
+            logger.info("In.Version - " +  in.getVersion());
+            logger.info("In.Flag - " +  optimizeNodeIndicesStatsOnLevel);
         }
         if (in.getVersion().onOrAfter(Version.V_2_14_0)) {
             includeCaches = in.readEnumSet(CacheType.class);
@@ -127,6 +133,8 @@ public class CommonStatsFlags implements Writeable, Cloneable {
         out.writeBoolean(includeOnlyTopIndexingPressureMetrics);
         if (out.getVersion().onOrAfter(Version.V_2_16_0)) {
             out.writeOptionalBoolean(optimizeNodeIndicesStatsOnLevel);
+            logger.info("Out.Version - " +  out.getVersion());
+            logger.info("Out.Flag - " +  optimizeNodeIndicesStatsOnLevel);
         }
         if (out.getVersion().onOrAfter(Version.V_2_14_0)) {
             out.writeEnumSet(includeCaches);
