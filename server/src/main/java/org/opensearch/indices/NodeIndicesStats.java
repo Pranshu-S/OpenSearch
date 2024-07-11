@@ -299,33 +299,27 @@ public class NodeIndicesStats implements Writeable, ToXContentFragment {
         builder.startObject(Fields.INDICES);
         stats.toXContent(builder, params);
 
-        if (Fields.INDICES.equals(level)) {
-            if (statsByIndex == null && statsByShard != null) {
-                statsByIndex = createStatsByIndex(statsByShard);
-            }
+        if ("indices".equals(level)) {
+            Map<Index, CommonStats> indexStats = createStatsByIndex();
             builder.startObject(Fields.INDICES);
-            if (statsByIndex != null) {
-                for (Map.Entry<Index, CommonStats> entry : statsByIndex.entrySet()) {
-                    builder.startObject(entry.getKey().getName());
-                    entry.getValue().toXContent(builder, params);
-                    builder.endObject();
-                }
+            for (Map.Entry<Index, CommonStats> entry : indexStats.entrySet()) {
+                builder.startObject(entry.getKey().getName());
+                entry.getValue().toXContent(builder, params);
+                builder.endObject();
             }
             builder.endObject();
-        } else if (Fields.SHARDS.equals(level)) {
+        } else if ("shards".equals(level)) {
             builder.startObject("shards");
-            if (statsByShard != null) {
-                for (Map.Entry<Index, List<IndexShardStats>> entry : statsByShard.entrySet()) {
-                    builder.startArray(entry.getKey().getName());
-                    for (IndexShardStats indexShardStats : entry.getValue()) {
-                        builder.startObject().startObject(String.valueOf(indexShardStats.getShardId().getId()));
-                        for (ShardStats shardStats : indexShardStats.getShards()) {
-                            shardStats.toXContent(builder, params);
-                        }
-                        builder.endObject().endObject();
+            for (Map.Entry<Index, List<IndexShardStats>> entry : statsByShard.entrySet()) {
+                builder.startArray(entry.getKey().getName());
+                for (IndexShardStats indexShardStats : entry.getValue()) {
+                    builder.startObject().startObject(String.valueOf(indexShardStats.getShardId().getId()));
+                    for (ShardStats shardStats : indexShardStats.getShards()) {
+                        shardStats.toXContent(builder, params);
                     }
-                    builder.endArray();
+                    builder.endObject().endObject();
                 }
+                builder.endArray();
             }
             builder.endObject();
         }
@@ -335,6 +329,23 @@ public class NodeIndicesStats implements Writeable, ToXContentFragment {
     }
 
     private Map<Index, CommonStats> createStatsByIndex(Map<Index, List<IndexShardStats>> statsByShard) {
+        Map<Index, CommonStats> statsMap = new HashMap<>();
+        for (Map.Entry<Index, List<IndexShardStats>> entry : statsByShard.entrySet()) {
+            if (!statsMap.containsKey(entry.getKey())) {
+                statsMap.put(entry.getKey(), new CommonStats());
+            }
+
+            for (IndexShardStats indexShardStats : entry.getValue()) {
+                for (ShardStats shardStats : indexShardStats.getShards()) {
+                    statsMap.get(entry.getKey()).add(shardStats.getStats());
+                }
+            }
+        }
+
+        return statsMap;
+    }
+
+    private Map<Index, CommonStats> createStatsByIndex() {
         Map<Index, CommonStats> statsMap = new HashMap<>();
         for (Map.Entry<Index, List<IndexShardStats>> entry : statsByShard.entrySet()) {
             if (!statsMap.containsKey(entry.getKey())) {
