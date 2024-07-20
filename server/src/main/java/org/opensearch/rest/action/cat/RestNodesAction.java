@@ -146,6 +146,7 @@ public class RestNodesAction extends AbstractCatAction {
                                 NodesStatsRequest.Metric.PROCESS.metricName(),
                                 NodesStatsRequest.Metric.SCRIPT.metricName()
                             );
+                        nodesStatsRequest.indices().aggregateNodeResponsesOnLevel(true);
                         client.admin().cluster().nodesStats(nodesStatsRequest, new RestResponseListener<NodesStatsResponse>(channel) {
                             @Override
                             public RestResponse buildResponse(NodesStatsResponse nodesStatsResponse) throws Exception {
