@@ -460,7 +460,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
 
         synchronized (mutex) {
             final DiscoveryNode sourceNode = publishRequest.getAcceptedState().nodes().getClusterManagerNode();
-            logger.debug(
+            logger.info(
                 "handlePublishRequest: handling version [{}] from [{}]",
                 publishRequest.getAcceptedState().getVersion(),
                 sourceNode
@@ -477,7 +477,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
                 && mode == Mode.FOLLOWER
                 && Optional.of(sourceNode).equals(lastKnownLeader) == false) {
 
-                logger.debug("received cluster state from {} but currently following {}, rejecting", sourceNode, lastKnownLeader);
+                logger.info("received cluster state from {} but currently following {}, rejecting", sourceNode, lastKnownLeader);
                 throw new CoordinationStateRejectedException(
                     "received cluster state from " + sourceNode + " but currently following " + lastKnownLeader + ", rejecting"
                 );
@@ -789,6 +789,23 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
             mode,
             lastKnownLeader
         );
+
+//         Read latest state from remote before becoming leader to avoid losing updates
+        if (remoteClusterStateService != null) {
+            try {
+                ClusterState remoteState = remoteClusterStateService.getLatestClusterStateForNewManager(
+                    ClusterName.CLUSTER_NAME_SETTING.get(settings).value(),
+                    getLocalNode().getId()
+                );
+                if (remoteState != null && remoteState.version() > getLastAcceptedState().version()) {
+                    logger.info("Applying latest remote state version {} before becoming leader", remoteState.version());
+                        assert persistedStateRegistry.getPersistedState(PersistedStateRegistry.PersistedStateType.REMOTE) != null : "Remote state has not been initialized";
+                        persistedStateRegistry.getPersistedState(PersistedStateRegistry.PersistedStateType.REMOTE).setLastAcceptedState(remoteState);
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to read latest remote state when becoming leader, proceeding with local state", e);
+            }
+        }
 
         mode = Mode.LEADER;
         joinAccumulator.close(mode);
@@ -1418,7 +1435,9 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
                 leaderChecker.setCurrentNodes(publishNodes);
                 followersChecker.setCurrentNodes(publishNodes);
                 lagDetector.setTrackedNodes(publishNodes);
+                logger.info("Starting pre-publish");
                 coordinationState.get().handlePrePublish(clusterState);
+                logger.info("Starting publish");
                 publication.start(followersChecker.getFaultyNodes());
             }
         } catch (Exception e) {

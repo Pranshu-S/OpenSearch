@@ -637,7 +637,7 @@ public class PublicationTransportHandler {
         @Override
         public void sendClusterState(final DiscoveryNode destination, final ActionListener<PublishWithJoinResponse> listener) {
             try {
-                logger.debug("sending remote cluster state to node: {}", destination.getName());
+                logger.info("sending remote cluster state to node: {}", destination.getName());
                 final String manifestFileName = ((RemotePersistedState) persistedStateRegistry.getPersistedState(PersistedStateType.REMOTE))
                     .getLastUploadedManifestFile();
                 final RemotePublishRequest remotePublishRequest = new RemotePublishRequest(
@@ -649,7 +649,7 @@ public class PublicationTransportHandler {
                     manifestFileName
                 );
                 final Consumer<TransportException> transportExceptionHandler = exp -> {
-                    logger.debug(() -> new ParameterizedMessage("failed to send remote cluster state to {}", destination), exp);
+                    logger.info(() -> new ParameterizedMessage("failed to send remote cluster state to {}", destination), exp);
                     listener.onFailure(exp);
                 };
                 final TransportResponseHandler<PublishWithJoinResponse> responseHandler = new TransportResponseHandler<>() {
