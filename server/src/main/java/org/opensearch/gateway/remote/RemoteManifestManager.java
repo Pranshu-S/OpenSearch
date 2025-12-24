@@ -91,7 +91,6 @@ public class RemoteManifestManager {
             ThreadPool.Names.REMOTE_STATE_READ,
             RemoteClusterStateUtils.CLUSTER_STATE_PATH_TOKEN
         );
-        ;
         clusterSettings.addSettingsUpdateConsumer(METADATA_MANIFEST_UPLOAD_TIMEOUT_SETTING, this::setMetadataManifestUploadTimeout);
         this.compressor = blobStoreRepository.getCompressor();
         this.namedXContentRegistry = blobStoreRepository.getNamedXContentRegistry();
