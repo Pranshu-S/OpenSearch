@@ -368,6 +368,9 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
                     nodeRemovalExecutor,
                     nodeRemovalExecutor
                 );
+
+                // IMC selection will be handled automatically by JoinTaskExecutor when nodes change
+
                 String reasonToPublish = switch (reason) {
                     case NODE_LEFT_REASON_DISCONNECTED -> "disconnected";
                     case NODE_LEFT_REASON_LAGGING -> "lagging";
@@ -790,7 +793,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
             lastKnownLeader
         );
 
-//         Read latest state from remote before becoming leader to avoid losing updates
+        // Read latest state from remote before becoming leader to avoid losing updates
         if (remoteClusterStateService != null) {
             try {
                 ClusterState remoteState = remoteClusterStateService.getLatestClusterStateForNewManager(
@@ -799,8 +802,8 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
                 );
                 if (remoteState != null && remoteState.version() > getLastAcceptedState().version()) {
                     logger.info("Applying latest remote state version {} before becoming leader", remoteState.version());
-                        assert persistedStateRegistry.getPersistedState(PersistedStateRegistry.PersistedStateType.REMOTE) != null : "Remote state has not been initialized";
-                        persistedStateRegistry.getPersistedState(PersistedStateRegistry.PersistedStateType.REMOTE).setLastAcceptedState(remoteState);
+                    assert persistedStateRegistry.getPersistedState(PersistedStateRegistry.PersistedStateType.REMOTE) != null : "Remote state has not been initialized";
+                    persistedStateRegistry.getPersistedState(PersistedStateRegistry.PersistedStateType.REMOTE).setLastAcceptedState(remoteState);
                 }
             } catch (Exception e) {
                 logger.warn("Failed to read latest remote state when becoming leader, proceeding with local state", e);
@@ -819,6 +822,9 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
 
         assert leaderChecker.leader() == null : leaderChecker.leader();
         followersChecker.updateFastResponseState(getCurrentTerm(), mode);
+
+        // Schedule IMC selection when becoming leader
+        // This will be handled automatically by JoinTaskExecutor when processing the become leader task
     }
 
     void becomeFollower(String method, DiscoveryNode leaderNode) {
@@ -1296,6 +1302,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
                 final boolean establishedAsClusterManager = mode == Mode.LEADER && getLastAcceptedState().term() == getCurrentTerm();
                 if (isNewJoinFromClusterManagerEligibleNode && establishedAsClusterManager && publicationInProgress() == false) {
                     scheduleReconfigurationIfNeeded();
+                    // IMC selection will be handled automatically by JoinTaskExecutor when nodes change
                 }
             } else {
                 coordinationState.get().handleJoin(join); // this might fail and bubble up the exception
@@ -1372,7 +1379,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
         try {
             synchronized (mutex) {
                 if (mode != Mode.LEADER || getCurrentTerm() != clusterChangedEvent.state().term()) {
-                    logger.debug(
+                    logger.info(
                         () -> new ParameterizedMessage(
                             "[{}] failed publication as node is no longer cluster-manager for term {}",
                             clusterChangedEvent.source(),
@@ -1441,7 +1448,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
                 publication.start(followersChecker.getFaultyNodes());
             }
         } catch (Exception e) {
-            logger.debug(() -> new ParameterizedMessage("[{}] publishing failed", clusterChangedEvent.source()), e);
+            logger.info(() -> new ParameterizedMessage("[{}] publishing failed", clusterChangedEvent.source()), e);
             publishListener.onFailure(new FailedToCommitClusterStateException("publishing failed", e));
         }
     }

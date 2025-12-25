@@ -338,10 +338,29 @@ public abstract class DiscoveryNodeRole implements Comparable<DiscoveryNodeRole>
     };
 
     /**
+     * Represents the role for an index metadata coordinator node.
+     */
+    public static final DiscoveryNodeRole INDEX_METADATA_COORDINATOR_ROLE = new DiscoveryNodeRole("index_metadata_coordinator", "imc") {
+
+        @Override
+        public Setting<Boolean> legacySetting() {
+            return null;
+        }
+
+        @Override
+        public void validateRole(List<DiscoveryNodeRole> roles) {
+            if (!roles.contains(DiscoveryNodeRole.CLUSTER_MANAGER_ROLE) && !roles.contains(DiscoveryNodeRole.MASTER_ROLE)) {
+                throw new IllegalArgumentException("index_metadata_coordinator role must be combined with cluster_manager role.");
+            }
+        }
+
+    };
+
+    /**
      * The built-in node roles.
      */
     public static SortedSet<DiscoveryNodeRole> BUILT_IN_ROLES = Collections.unmodifiableSortedSet(
-        new TreeSet<>(Arrays.asList(DATA_ROLE, INGEST_ROLE, CLUSTER_MANAGER_ROLE, REMOTE_CLUSTER_CLIENT_ROLE, WARM_ROLE))
+        new TreeSet<>(Arrays.asList(DATA_ROLE, INGEST_ROLE, CLUSTER_MANAGER_ROLE, REMOTE_CLUSTER_CLIENT_ROLE, WARM_ROLE, INDEX_METADATA_COORDINATOR_ROLE))
     );
 
     /**

@@ -130,6 +130,10 @@ public class DiscoveryNode implements VerifiableWriteable, ToXContentFragment {
         return getRolesFromSettings(settings).stream().allMatch(DiscoveryNodeRole.WARM_ROLE::equals);
     }
 
+    public static boolean hasIndexMetadataCoordinatorRole(Settings settings) {
+        return hasRole(settings, DiscoveryNodeRole.INDEX_METADATA_COORDINATOR_ROLE);
+    }
+
     private final String nodeName;
     private final String nodeId;
     private final String ephemeralId;
@@ -540,6 +544,15 @@ public class DiscoveryNode implements VerifiableWriteable, ToXContentFragment {
      */
     public boolean isSearchNode() {
         return roles.contains(DiscoveryNodeRole.SEARCH_ROLE);
+    }
+
+    /**
+     * Returns whether the node is an index metadata coordinator.
+     *
+     * @return true if the node contains index metadata coordinator role, false otherwise
+     */
+    public boolean isIndexMetadataCoordinator() {
+        return roles.contains(DiscoveryNodeRole.INDEX_METADATA_COORDINATOR_ROLE);
     }
 
     /**

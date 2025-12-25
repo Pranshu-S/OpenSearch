@@ -32,6 +32,8 @@
 package org.opensearch.cluster.coordination;
 
 import org.opensearch.cluster.node.DiscoveryNode;
+import org.opensearch.cluster.node.DiscoveryNodes;
+import org.opensearch.cluster.node.DiscoveryNodeRole;
 import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.common.util.set.Sets;
 import org.opensearch.core.ParseField;
@@ -53,7 +55,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
 
 /**
  * Metadata for cluster coordination
@@ -73,10 +75,13 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
 
     private final Set<VotingConfigExclusion> votingConfigExclusions;
 
+    private final String indexMetadataCoordinator;
+
     private static final ParseField TERM_PARSE_FIELD = new ParseField("term");
     private static final ParseField LAST_COMMITTED_CONFIGURATION_FIELD = new ParseField("last_committed_config");
     private static final ParseField LAST_ACCEPTED_CONFIGURATION_FIELD = new ParseField("last_accepted_config");
     private static final ParseField VOTING_CONFIG_EXCLUSIONS_FIELD = new ParseField("voting_config_exclusions");
+    private static final ParseField INDEX_METADATA_COORDINATOR_FIELD = new ParseField("index_metadata_coordinator");
 
     private static long term(Object[] termAndConfigs) {
         return (long) termAndConfigs[0];
@@ -100,13 +105,18 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
         return votingTombstones;
     }
 
+    private static String indexMetadataCoordinator(Object[] fields) {
+        return fields.length > 4 ? (String) fields[4] : null;
+    }
+
     private static final ConstructingObjectParser<CoordinationMetadata, Void> PARSER = new ConstructingObjectParser<>(
         "coordination_metadata",
         fields -> new CoordinationMetadata(
             term(fields),
             lastCommittedConfig(fields),
             lastAcceptedConfig(fields),
-            votingConfigExclusions(fields)
+            votingConfigExclusions(fields),
+            indexMetadataCoordinator(fields)
         )
     );
     static {
@@ -114,6 +124,7 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
         PARSER.declareStringArray(ConstructingObjectParser.constructorArg(), LAST_COMMITTED_CONFIGURATION_FIELD);
         PARSER.declareStringArray(ConstructingObjectParser.constructorArg(), LAST_ACCEPTED_CONFIGURATION_FIELD);
         PARSER.declareObjectArray(ConstructingObjectParser.constructorArg(), VotingConfigExclusion.PARSER, VOTING_CONFIG_EXCLUSIONS_FIELD);
+        PARSER.declareString(ConstructingObjectParser.optionalConstructorArg(), INDEX_METADATA_COORDINATOR_FIELD);
     }
 
     public CoordinationMetadata(
@@ -122,10 +133,21 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
         VotingConfiguration lastAcceptedConfiguration,
         Set<VotingConfigExclusion> votingConfigExclusions
     ) {
+        this(term, lastCommittedConfiguration, lastAcceptedConfiguration, votingConfigExclusions, null);
+    }
+
+    public CoordinationMetadata(
+        long term,
+        VotingConfiguration lastCommittedConfiguration,
+        VotingConfiguration lastAcceptedConfiguration,
+        Set<VotingConfigExclusion> votingConfigExclusions,
+        String indexMetadataCoordinator
+    ) {
         this.term = term;
         this.lastCommittedConfiguration = lastCommittedConfiguration;
         this.lastAcceptedConfiguration = lastAcceptedConfiguration;
         this.votingConfigExclusions = Collections.unmodifiableSet(new HashSet<>(votingConfigExclusions));
+        this.indexMetadataCoordinator = indexMetadataCoordinator;
     }
 
     public CoordinationMetadata(StreamInput in) throws IOException {
@@ -133,6 +155,7 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
         lastCommittedConfiguration = new VotingConfiguration(in);
         lastAcceptedConfiguration = new VotingConfiguration(in);
         votingConfigExclusions = Collections.unmodifiableSet(in.readSet(VotingConfigExclusion::new));
+        indexMetadataCoordinator = in.readOptionalString();
     }
 
     public static Builder builder() {
@@ -149,6 +172,7 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
         lastCommittedConfiguration.writeTo(out);
         lastAcceptedConfiguration.writeTo(out);
         out.writeCollection(votingConfigExclusions);
+        out.writeOptionalString(indexMetadataCoordinator);
     }
 
     @Override
@@ -158,10 +182,14 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
 
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
-        return builder.field(TERM_PARSE_FIELD.getPreferredName(), term)
+        builder.field(TERM_PARSE_FIELD.getPreferredName(), term)
             .field(LAST_COMMITTED_CONFIGURATION_FIELD.getPreferredName(), lastCommittedConfiguration)
             .field(LAST_ACCEPTED_CONFIGURATION_FIELD.getPreferredName(), lastAcceptedConfiguration)
             .field(VOTING_CONFIG_EXCLUSIONS_FIELD.getPreferredName(), votingConfigExclusions);
+        if (indexMetadataCoordinator != null) {
+            builder.field(INDEX_METADATA_COORDINATOR_FIELD.getPreferredName(), indexMetadataCoordinator);
+        }
+        return builder;
     }
 
     public static CoordinationMetadata fromXContent(XContentParser parser) throws IOException {
@@ -184,6 +212,33 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
         return votingConfigExclusions;
     }
 
+    public String getIndexMetadataCoordinator() {
+        return indexMetadataCoordinator;
+    }
+
+    public static String selectIndexMetadataCoordinator(DiscoveryNodes nodes, String currentIMC) {
+        List<DiscoveryNode> imcNodes = new ArrayList<>();
+        for (DiscoveryNode node : nodes) {
+            if (node.getRoles().contains(DiscoveryNodeRole.INDEX_METADATA_COORDINATOR_ROLE)) {
+                imcNodes.add(node);
+            }
+        }
+
+        if (imcNodes.isEmpty()) {
+            return null;
+        }
+
+        if (currentIMC != null) {
+            for (DiscoveryNode node : imcNodes) {
+                if (node.getId().equals(currentIMC)) {
+                    return currentIMC;
+                }
+            }
+        }
+
+        return imcNodes.get(0).getId();
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -194,7 +249,8 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
         if (term != that.term) return false;
         if (!lastCommittedConfiguration.equals(that.lastCommittedConfiguration)) return false;
         if (!lastAcceptedConfiguration.equals(that.lastAcceptedConfiguration)) return false;
-        return votingConfigExclusions.equals(that.votingConfigExclusions);
+        if (!votingConfigExclusions.equals(that.votingConfigExclusions)) return false;
+        return Objects.equals(indexMetadataCoordinator, that.indexMetadataCoordinator);
     }
 
     @Override
@@ -203,6 +259,7 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
         result = 31 * result + lastCommittedConfiguration.hashCode();
         result = 31 * result + lastAcceptedConfiguration.hashCode();
         result = 31 * result + votingConfigExclusions.hashCode();
+        result = 31 * result + Objects.hashCode(indexMetadataCoordinator);
         return result;
     }
 
@@ -217,6 +274,8 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
             + lastAcceptedConfiguration
             + ", votingConfigExclusions="
             + votingConfigExclusions
+            + ", indexMetadataCoordinator="
+            + indexMetadataCoordinator
             + '}';
     }
 
@@ -231,6 +290,7 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
         private VotingConfiguration lastCommittedConfiguration = VotingConfiguration.EMPTY_CONFIG;
         private VotingConfiguration lastAcceptedConfiguration = VotingConfiguration.EMPTY_CONFIG;
         private final Set<VotingConfigExclusion> votingConfigExclusions = new HashSet<>();
+        private String indexMetadataCoordinator;
 
         public Builder() {
 
@@ -241,6 +301,7 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
             this.lastCommittedConfiguration = state.lastCommittedConfiguration;
             this.lastAcceptedConfiguration = state.lastAcceptedConfiguration;
             this.votingConfigExclusions.addAll(state.votingConfigExclusions);
+            this.indexMetadataCoordinator = state.indexMetadataCoordinator;
         }
 
         public Builder term(long term) {
@@ -268,8 +329,13 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
             return this;
         }
 
+        public Builder indexMetadataCoordinator(String nodeId) {
+            this.indexMetadataCoordinator = nodeId;
+            return this;
+        }
+
         public CoordinationMetadata build() {
-            return new CoordinationMetadata(term, lastCommittedConfiguration, lastAcceptedConfiguration, votingConfigExclusions);
+            return new CoordinationMetadata(term, lastCommittedConfiguration, lastAcceptedConfiguration, votingConfigExclusions, indexMetadataCoordinator);
         }
     }
 
@@ -444,7 +510,7 @@ public class CoordinationMetadata implements VerifiableWriteable, ToXContentFrag
         }
 
         public static VotingConfiguration of(DiscoveryNode... nodes) {
-            return new VotingConfiguration(Arrays.stream(nodes).map(DiscoveryNode::getId).collect(Collectors.toSet()));
+            return new VotingConfiguration(Arrays.stream(nodes).map(DiscoveryNode::getId).collect(java.util.stream.Collectors.toSet()));
         }
     }
 }
