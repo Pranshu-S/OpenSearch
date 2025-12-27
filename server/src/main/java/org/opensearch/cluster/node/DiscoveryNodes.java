@@ -132,6 +132,17 @@ public class DiscoveryNodes extends AbstractDiffable<DiscoveryNodes> implements 
     }
 
     /**
+     * Returns {@code true} if the local node is the elected cluster-manager node.
+     */
+    public boolean isLocalNodeIndexMetadataCoordinator() {
+        if (localNodeId == null) {
+            // we don't know yet the local node id, return false
+            return false;
+        }
+        return localNodeId.equals(indexMetadataCoordinatorNodeId);
+    }
+
+    /**
      * Get the number of known nodes
      *
      * @return number of nodes

@@ -75,14 +75,7 @@ import org.opensearch.cluster.action.shard.ShardStateAction;
 import org.opensearch.cluster.applicationtemplates.SystemTemplatesPlugin;
 import org.opensearch.cluster.applicationtemplates.SystemTemplatesService;
 import org.opensearch.cluster.coordination.PersistedStateRegistry;
-import org.opensearch.cluster.metadata.AliasValidator;
-import org.opensearch.cluster.metadata.IndexTemplateMetadata;
-import org.opensearch.cluster.metadata.Metadata;
-import org.opensearch.cluster.metadata.MetadataCreateDataStreamService;
-import org.opensearch.cluster.metadata.MetadataCreateIndexService;
-import org.opensearch.cluster.metadata.MetadataIndexUpgradeService;
-import org.opensearch.cluster.metadata.SystemIndexMetadataUpgradeService;
-import org.opensearch.cluster.metadata.TemplateUpgradeService;
+import org.opensearch.cluster.metadata.*;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.cluster.node.DiscoveryNodeRole;
 import org.opensearch.cluster.routing.BatchedRerouteService;
@@ -1692,6 +1685,14 @@ public class Node implements Closeable {
                 taskManagerClientOptional.ifPresent(value -> b.bind(TaskManagerClient.class).toInstance(value));
             });
             injector = modules.createInjector();
+
+            // Initialize IndexMetadataCoordinatorService after injector is created
+            final IndexMetadataCoordinatorService indexMetadataCoordinatorService = new IndexMetadataCoordinatorService(
+                clusterService,
+                threadPool,
+                injector.getInstance(PersistedStateRegistry.class)
+            );
+            metadataCreateIndexService.setIndexMetadataCoordinatorService(indexMetadataCoordinatorService);
 
             // We allocate copies of existing shards by looking for a viable copy of the shard in the cluster and assigning the shard there.
             // The search for viable copies is triggered by an allocation attempt (i.e. a reroute) and is performed asynchronously. When it

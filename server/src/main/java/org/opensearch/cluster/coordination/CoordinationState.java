@@ -727,6 +727,10 @@ public class CoordinationState {
             }
         }
 
+        default void updateIndexMetadataState(ClusterState clusterState) {
+            throw new  UnsupportedOperationException("updateIndexMetadataState is not supported");
+        }
+
         default Metadata.Builder commitVotingConfiguration(ClusterState lastAcceptedState) {
             Metadata.Builder metadataBuilder = null;
             if (lastAcceptedState.getLastAcceptedConfiguration().equals(lastAcceptedState.getLastCommittedConfiguration()) == false) {
