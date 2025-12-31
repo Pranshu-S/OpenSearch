@@ -347,7 +347,7 @@ public class RemoteManifestConditionalUpdateIT extends RemoteStoreBaseIntegTestC
 
     public void testConditionalUpdatesOnClusterStateChanges() throws Exception {
         // Bootstrap cluster
-        prepareCluster(1, 2, INDEX_NAME, 1, 1);
+        prepareCluster(3, 2, INDEX_NAME, 1, 1);
         ensureGreen(INDEX_NAME);
 
         // 2. Create new index and verify conditional update
@@ -356,6 +356,7 @@ public class RemoteManifestConditionalUpdateIT extends RemoteStoreBaseIntegTestC
             .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
             .build());
         ensureGreen("test-index-2");
+        ClusterState state = internalCluster().clusterService().state();
     }
 
     public void testVersionConflictWithNodeFailure() throws Exception {

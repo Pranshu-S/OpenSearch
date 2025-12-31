@@ -1690,7 +1690,9 @@ public class Node implements Closeable {
             final IndexMetadataCoordinatorService indexMetadataCoordinatorService = new IndexMetadataCoordinatorService(
                 clusterService,
                 threadPool,
-                injector.getInstance(PersistedStateRegistry.class)
+                transportService,
+                injector.getInstance(PersistedStateRegistry.class),
+                clusterService.getClusterApplierService()
             );
             metadataCreateIndexService.setIndexMetadataCoordinatorService(indexMetadataCoordinatorService);
 

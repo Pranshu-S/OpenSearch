@@ -1380,6 +1380,76 @@ public class RemoteClusterStateService implements Closeable {
         return getClusterStateForManifest(clusterName, clusterMetadataManifest.get(), indexMetadataManifest.orElse(null), nodeId, includeEphemeral);
     }
 
+    public Map<String, IndexMetadata> readIndexMetadataInParallel(
+        ClusterState previousState,
+        String clusterUUID,
+        List<UploadedIndexMetadata> indicesToRead
+        ) {
+        int totalReadTasks = indicesToRead.size();
+        CountDownLatch latch = new CountDownLatch(totalReadTasks);
+        List<RemoteReadResult> readResults = Collections.synchronizedList(new ArrayList<>());
+        List<Exception> exceptionList = Collections.synchronizedList(new ArrayList<>(totalReadTasks));
+
+        LatchedActionListener<RemoteReadResult> listener = new LatchedActionListener<>(ActionListener.wrap(response -> {
+            logger.debug("Successfully read cluster state component from remote");
+            readResults.add(response);
+        }, ex -> {
+            logger.error("Failed to read cluster state from remote", ex);
+            exceptionList.add(ex);
+        }), latch);
+
+        for (UploadedIndexMetadata indexMetadata : indicesToRead) {
+            remoteIndexMetadataManager.readAsync(
+                indexMetadata.getIndexName(),
+                new RemoteIndexMetadata(
+                    RemoteClusterStateUtils.getFormattedIndexFileName(indexMetadata.getUploadedFilename()),
+                    clusterUUID,
+                    blobStoreRepository.getCompressor(),
+                    blobStoreRepository.getNamedXContentRegistry()
+                ),
+                listener
+            );
+        }
+
+        try {
+            if (latch.await(this.remoteStateReadTimeout.getMillis(), TimeUnit.MILLISECONDS) == false) {
+                RemoteStateTransferException exception = new RemoteStateTransferException(
+                    "Timed out waiting to read cluster state from remote within timeout " + this.remoteStateReadTimeout
+                );
+                exceptionList.forEach(exception::addSuppressed);
+                throw exception;
+            }
+        } catch (InterruptedException e) {
+            exceptionList.forEach(e::addSuppressed);
+            RemoteStateTransferException ex = new RemoteStateTransferException(
+                "Interrupted while waiting to read cluster state from metadata"
+            );
+            Thread.currentThread().interrupt();
+            throw ex;
+        }
+
+        if (!exceptionList.isEmpty()) {
+            RemoteStateTransferException exception = new RemoteStateTransferException("Exception during reading cluster state from remote");
+            exceptionList.forEach(exception::addSuppressed);
+            throw exception;
+        }
+
+        Map<String, IndexMetadata> indexMetadataMap = new HashMap<>();
+
+        readResults.forEach(remoteReadResult -> {
+            switch (remoteReadResult.getComponent()) {
+                case RemoteIndexMetadata.INDEX:
+                    IndexMetadata indexMetadata = (IndexMetadata) remoteReadResult.getObj();
+                    indexMetadataMap.put(indexMetadata.getIndex().getName(), indexMetadata);
+                    break;
+                default:
+                    throw new IllegalStateException("Unknown component: " + remoteReadResult.getComponent());
+            }
+        });
+
+        return indexMetadataMap;
+    }
+
     // package private for testing
     ClusterState readClusterStateInParallel(
         ClusterState previousState,

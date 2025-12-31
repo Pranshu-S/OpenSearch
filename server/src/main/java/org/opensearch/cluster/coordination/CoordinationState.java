@@ -727,7 +727,11 @@ public class CoordinationState {
             }
         }
 
-        default void updateIndexMetadataState(ClusterState clusterState) {
+        default String uploadIndexMetadataState(ClusterState clusterState) {
+            throw new  UnsupportedOperationException("updateIndexMetadataState is not supported");
+        }
+
+        default void downloadAndCommitIndexMetadataState(String version) throws IOException {
             throw new  UnsupportedOperationException("updateIndexMetadataState is not supported");
         }
 

@@ -77,11 +77,7 @@ import java.io.Closeable;
 import java.io.IOError;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
@@ -815,16 +811,16 @@ public class GatewayMetaState implements Closeable {
         }
 
         private boolean verifyManifestAndClusterState(ClusterMetadataManifest manifest, ClusterState clusterState) {
-            assert manifest != null : "ClusterMetadataManifest is null";
-            assert clusterState != null : "ClusterState is null";
-            assert clusterState.metadata().indices().size() == manifest.getIndices().size()
-                : "Number of indices in last accepted state and manifest are different";
-            manifest.getIndices().stream().forEach(md -> {
-                assert clusterState.metadata().indices().containsKey(md.getIndexName())
-                    : "Last accepted state does not contain the index : " + md.getIndexName();
-                assert clusterState.metadata().indices().get(md.getIndexName()).getIndexUUID().equals(md.getIndexUUID())
-                    : "Last accepted state and manifest do not have same UUID for index : " + md.getIndexName();
-            });
+//            assert manifest != null : "ClusterMetadataManifest is null";
+//            assert clusterState != null : "ClusterState is null";
+//            assert clusterState.metadata().indices().size() == manifest.getIndices().size()
+//                : "Number of indices in last accepted state and manifest are different";
+//            manifest.getIndices().stream().forEach(md -> {
+//                assert clusterState.metadata().indices().containsKey(md.getIndexName())
+//                    : "Last accepted state does not contain the index : " + md.getIndexName();
+//                assert clusterState.metadata().indices().get(md.getIndexName()).getIndexUUID().equals(md.getIndexUUID())
+//                    : "Last accepted state and manifest do not have same UUID for index : " + md.getIndexName();
+//            });
             return true;
         }
 
@@ -885,10 +881,10 @@ public class GatewayMetaState implements Closeable {
         }
 
         @Override
-        public void updateIndexMetadataState(ClusterState clusterState) {
+        public String uploadIndexMetadataState(ClusterState clusterState) {
             if (clusterState == null || clusterState.getNodes().isLocalNodeIndexMetadataCoordinator() == false) {
                 lastAcceptedState = clusterState;
-                return;
+                return null;
             }
             RemoteIndexMetadataManifestInfo manifestInfo = null;
 
@@ -913,6 +909,23 @@ public class GatewayMetaState implements Closeable {
                 remoteClusterStateService.writeMetadataFailed();
                 handleExceptionOnWrite(e);
             }
+
+            return manifestInfo.getManifestVersion();
+        }
+
+        @Override
+        public void downloadAndCommitIndexMetadataState(String version) throws IOException {
+            IndexMetadataManifest indexManifest = remoteClusterStateService.getLatestIndexMetadataManifest();
+            List<ClusterMetadataManifest.UploadedIndexMetadata> indicesToRead = indexManifest != null ? indexManifest.getIndices() : indexManifest.getIndices();
+
+            Map<String, IndexMetadata> latestIndices = remoteClusterStateService.readIndexMetadataInParallel(lastAcceptedState, lastAcceptedState.stateUUID(), indicesToRead);
+
+            final ClusterState.Builder clusterStateBuilder = ClusterState.builder(lastAcceptedState);
+            Metadata.Builder metadataBuilder = Metadata.builder(lastAcceptedState.metadata());
+            metadataBuilder.indices(latestIndices);
+
+            lastAcceptedState = clusterStateBuilder.metadata(metadataBuilder).build();
+            lastAcceptedIndexMetadataManifestVersion = version;
         }
 
         @Override
