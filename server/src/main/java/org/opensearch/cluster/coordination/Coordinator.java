@@ -355,6 +355,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
         this.indexMetadataCoordinatorService = indexMetadataCoordinatorService;
         if (Objects.nonNull(indexMetadataCoordinatorService)) {
             indexMetadataCoordinatorService.setClusterStateSupplier(this::getStateForClusterManagerService);
+            indexMetadataCoordinatorService.setIndexMetadataStateVersionSupplier(this::getIndexMetadataStateVersionForIndexMetadataCoordinatorService);
         }
         this.indexMetadataPublicationTransportHandler = new IndexMetadataPublicationTransportHandler(
             transportService,
@@ -1407,15 +1408,9 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
         }
     }
 
-    ClusterState getIndexMetadataStateVersionForIndexMetadataCoordinatorService() {
+    Integer getIndexMetadataStateVersionForIndexMetadataCoordinatorService() {
         synchronized (mutex) {
-            final ClusterState clusterState = coordinationState.get().getLastAcceptedState();
-            if (mode != Mode.LEADER || clusterState.term() != getCurrentTerm()) {
-                // the cluster-manager service checks if the local node is the cluster-manager node in order to fail execution of the state
-                // update early
-                return clusterStateWithNoClusterManagerBlock(clusterState);
-            }
-            return clusterState;
+            return coordinationState.get().getLastAcceptedIndexMetadataVersion();
         }
     }
 
