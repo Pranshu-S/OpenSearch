@@ -484,7 +484,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
         }
     }
 
-    IndexMetadataPublishResponse handleIndexMetadataPublishRequest(Map<String, IndexMetadata> latestIndices) {
+    IndexMetadataPublishResponse handleIndexMetadataPublishRequest(Map<String, IndexMetadata> latestIndices, int indexMetadataVersion) {
         synchronized (mutex) {
             ClusterState currentState = getLastAcceptedState();
             Metadata updatedIndexMetadata = Metadata.builder(currentState.metadata()).indices(latestIndices).build();
@@ -492,7 +492,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
 
             logger.info("Built new IndexMetadata Cluster State. Number of Indices - " + updateState.metadata().indices().size());
 
-            coordinationState.get().commitIndexMetadataState(updateState);
+            coordinationState.get().commitIndexMetadataState(updateState, indexMetadataVersion);
 
             logger.info("Updated states locally and on remote");
 
@@ -1407,6 +1407,18 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
         }
     }
 
+    ClusterState getIndexMetadataStateVersionForIndexMetadataCoordinatorService() {
+        synchronized (mutex) {
+            final ClusterState clusterState = coordinationState.get().getLastAcceptedState();
+            if (mode != Mode.LEADER || clusterState.term() != getCurrentTerm()) {
+                // the cluster-manager service checks if the local node is the cluster-manager node in order to fail execution of the state
+                // update early
+                return clusterStateWithNoClusterManagerBlock(clusterState);
+            }
+            return clusterState;
+        }
+    }
+
     private ClusterState clusterStateWithNoClusterManagerBlock(ClusterState clusterState) {
         if (clusterState.nodes().getClusterManagerNodeId() != null) {
             // remove block if it already exists before adding new one
@@ -1424,8 +1436,8 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
     }
 
     @Override
-    public void publishIndexMetadata(ClusterState clusterState) {
-        coordinationState.get().uploadIndexMetadataState(clusterState);
+    public void publishIndexMetadata(ClusterState clusterState, int indexMetadataVersion) {
+        coordinationState.get().uploadIndexMetadataState(clusterState, indexMetadataVersion);
 
         IndexMetadataPublicationTransportHandler.IndexMetadataPublicationContext indexMetadataPublicationContext =
             indexMetadataPublicationTransportHandler.newIndexMetadataPublicationContext(clusterState, persistedStateRegistry);
