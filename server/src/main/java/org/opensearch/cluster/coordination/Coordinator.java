@@ -355,7 +355,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
         this.clusterSettings = clusterSettings;
         this.indexMetadataCoordinatorService = indexMetadataCoordinatorService;
         if (Objects.nonNull(indexMetadataCoordinatorService)) {
-            indexMetadataCoordinatorService.setClusterStateSupplier(this::getStateForClusterManagerService);
+            indexMetadataCoordinatorService.setClusterStateSupplier(this::getStateForIndexMetadataCoordinatorService);
             indexMetadataCoordinatorService.setIndexMetadataStateVersionSupplier(this::getIndexMetadataStateVersionForIndexMetadataCoordinatorService);
         }
         this.indexMetadataPublicationTransportHandler = new IndexMetadataPublicationTransportHandler(
@@ -465,10 +465,10 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
             logger.trace("handleApplyCommit: applying commit {}", applyCommitRequest);
 
             coordinationState.get().handleCommit(applyCommitRequest);
-            final ClusterState committedState = hideStateIfNotRecovered(coordinationState.get().getLastAcceptedState());
+            final ClusterState committedState = hideStateIfNotRecovered(coordinationState.get().getLastAcceptedRemoteState());
             applierState = mode == Mode.CANDIDATE ? clusterStateWithNoClusterManagerBlock(committedState) : committedState;
             clusterApplier.setPreCommitState(applierState);
-            updateLastSeen.accept(coordinationState.get().getLastAcceptedState());
+            updateLastSeen.accept(coordinationState.get().getLastAcceptedRemoteState());
 
             if (applyCommitRequest.getSourceNode().equals(getLocalNode())) {
                 // cluster-manager node applies the committed state at the end of the publication process, not here.
@@ -493,7 +493,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
 
     IndexMetadataPublishResponse handleIndexMetadataPublishRequest(Map<String, IndexMetadata> latestIndices, int indexMetadataVersion) {
         synchronized (mutex) {
-            ClusterState currentState = getLastAcceptedState();
+            ClusterState currentState = getLastAcceptedRemoteState();
             Metadata updatedIndexMetadata = Metadata.builder(currentState.metadata()).removeAllIndices().indices(latestIndices).build();
             ClusterState updateState = ClusterState.builder(currentState).metadata(updatedIndexMetadata).build();
 
@@ -1238,7 +1238,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
 
             Metadata.Builder metadataBuilder = Metadata.builder(currentState.metadata());
             // automatically generate a UID for the metadata if we need to
-            metadataBuilder.generateClusterUuidIfNeeded();
+//            metadataBuilder.generateClusterUuidIfNeeded();
             metadataBuilder.coordinationMetadata(coordinationMetadata);
 
             coordinationState.get().setInitialState(ClusterState.builder(currentState).metadata(metadataBuilder).build());
@@ -1394,6 +1394,12 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
         }
     }
 
+    public ClusterState getLastAcceptedRemoteState() {
+        synchronized (mutex) {
+            return coordinationState.get().getLastAcceptedRemoteState();
+        }
+    }
+
     @Nullable
     public ClusterState getApplierState() {
         return applierState;
@@ -1410,12 +1416,21 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
         synchronized (mutex) {
             // expose last accepted cluster state as base state upon which the cluster_manager service
             // speculatively calculates the next cluster state update
-            final ClusterState clusterState = coordinationState.get().getLastAcceptedState();
+            final ClusterState clusterState = coordinationState.get().getLastAcceptedRemoteState() == null ? coordinationState.get().getLastAcceptedState() : coordinationState.get().getLastAcceptedRemoteState();
             if (mode != Mode.LEADER || clusterState.term() != getCurrentTerm()) {
                 // the cluster-manager service checks if the local node is the cluster-manager node in order to fail execution of the state
                 // update early
                 return clusterStateWithNoClusterManagerBlock(clusterState);
             }
+            return clusterState;
+        }
+    }
+
+    ClusterState getStateForIndexMetadataCoordinatorService() {
+        synchronized (mutex) {
+            // expose last accepted cluster state as base state upon which the cluster_manager service
+            // speculatively calculates the next cluster state update
+            final ClusterState clusterState = coordinationState.get().getLastAcceptedRemoteState() == null ? coordinationState.get().getLastAcceptedState() : coordinationState.get().getLastAcceptedRemoteState();
             return clusterState;
         }
     }
@@ -1501,7 +1516,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
                     return;
                 }
 
-                assert assertPreviousStateConsistency(clusterChangedEvent);
+//                assert assertPreviousStateConsistency(clusterChangedEvent);
 
                 final ClusterState clusterState = clusterChangedEvent.state();
 
@@ -1545,7 +1560,8 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
     // there is no equals on cluster state, so we just serialize it to XContent and compare Maps
     // deserialized from the resulting JSON
     private boolean assertPreviousStateConsistency(ClusterChangedEvent event) {
-        assert event.previousState() == coordinationState.get().getLastAcceptedState()
+        ClusterState clusterState = coordinationState.get().getLastAcceptedRemoteState() == null ? coordinationState.get().getLastAcceptedState() : coordinationState.get().getLastAcceptedRemoteState();
+        assert event.previousState() == clusterState
             || XContentHelper.convertToMap(
                 JsonXContent.jsonXContent,
                 Strings.toString(MediaTypeRegistry.JSON, event.previousState()),

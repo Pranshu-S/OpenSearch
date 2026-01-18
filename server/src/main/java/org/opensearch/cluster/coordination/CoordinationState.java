@@ -114,6 +114,10 @@ public class CoordinationState {
         return persistedStateRegistry.getPersistedState(PersistedStateType.LOCAL).getLastAcceptedState();
     }
 
+    public ClusterState getLastAcceptedRemoteState() {
+        return persistedStateRegistry.getPersistedState(PersistedStateType.REMOTE).getLastAcceptedState();
+    }
+
     public int getLastAcceptedIndexMetadataVersion() {
         return persistedStateRegistry.getPersistedState(PersistedStateType.LOCAL).getLastUpdatedIndexMetadataVersion();
     }
@@ -128,6 +132,18 @@ public class CoordinationState {
 
     public long getLastAcceptedVersion() {
         return getLastAcceptedState().version();
+    }
+
+    public long getLastAcceptedRemoteVersion() {
+        return getLastAcceptedRemoteState().version();
+    }
+
+    public long getHighestLastAcceptedRemoteVersion() {
+        if (getLastAcceptedRemoteState() != null && getLastAcceptedRemoteVersion() > getLastAcceptedVersion()) {
+            return getLastAcceptedRemoteState().version();
+        } else {
+            return getLastAcceptedVersion();
+        }
     }
 
     private long getLastAcceptedVersionOrMetadataVersion() {
@@ -359,7 +375,7 @@ public class CoordinationState {
             logger.debug("handleClientValue: ignored request as election not won");
             throw new CoordinationStateRejectedException("election not won");
         }
-        if (lastPublishedVersion != getLastAcceptedVersion()) {
+        if (lastPublishedVersion != getHighestLastAcceptedRemoteVersion()) {
             logger.debug("handleClientValue: cannot start publishing next value before accepting previous one");
             throw new CoordinationStateRejectedException("cannot start publishing next value before accepting previous one");
         }
@@ -463,7 +479,7 @@ public class CoordinationState {
         if (shouldUpdateRemotePersistedState(publishRequest)) {
             updateRemotePersistedStateOnPublishRequest(publishRequest);
         }
-        assert getLastAcceptedState() == clusterState;
+        assert getLastAcceptedRemoteState() == clusterState;
 
         return new PublishResponse(clusterState.term(), clusterState.version());
     }
@@ -556,7 +572,7 @@ public class CoordinationState {
                 "incoming term " + applyCommit.getTerm() + " does not match last accepted term " + getLastAcceptedTerm()
             );
         }
-        if (applyCommit.getVersion() != getLastAcceptedVersion()) {
+        if (applyCommit.getVersion() != getLastAcceptedRemoteVersion()) {
             logger.debug(
                 "handleCommit: ignored commit request due to version mismatch (term {}, expected: [{}], actual: [{}])",
                 getLastAcceptedTerm(),
@@ -741,30 +757,34 @@ public class CoordinationState {
          * marked as committed.
          */
         default void markLastAcceptedStateAsCommitted() {
-            final ClusterState lastAcceptedState = getLastAcceptedState();
-            Metadata.Builder metadataBuilder = commitVotingConfiguration(lastAcceptedState);
-            // if we receive a commit from a Zen1 cluster-manager that has not recovered its state yet,
-            // the cluster uuid might not been known yet.
-            assert lastAcceptedState.metadata().clusterUUID().equals(Metadata.UNKNOWN_CLUSTER_UUID) == false
-                || lastAcceptedState.term() == ZEN1_BWC_TERM : "received cluster state with empty cluster uuid but not Zen1 BWC term: "
-                    + lastAcceptedState;
-            if (lastAcceptedState.metadata().clusterUUID().equals(Metadata.UNKNOWN_CLUSTER_UUID) == false
-                && lastAcceptedState.metadata().clusterUUIDCommitted() == false) {
-                if (metadataBuilder == null) {
-                    metadataBuilder = Metadata.builder(lastAcceptedState.metadata());
-                }
-                metadataBuilder.clusterUUIDCommitted(true);
+            /**
+             * Setting No-op by default for LOCAL Persisted State
+             */
 
-                if (lastAcceptedState.term() != ZEN1_BWC_TERM) {
-                    // Zen1 cluster-managers never publish a committed cluster UUID so if we logged this it'd happen on on every update.
-                    // Let's just
-                    // not log it at all in a 6.8/7.x rolling upgrade.
-                    logger.info("cluster UUID set to [{}]", lastAcceptedState.metadata().clusterUUID());
-                }
-            }
-            if (metadataBuilder != null) {
-                setLastAcceptedState(ClusterState.builder(lastAcceptedState).metadata(metadataBuilder).build());
-            }
+//            final ClusterState lastAcceptedState = getLastAcceptedState();
+//            Metadata.Builder metadataBuilder = commitVotingConfiguration(lastAcceptedState);
+//            // if we receive a commit from a Zen1 cluster-manager that has not recovered its state yet,
+//            // the cluster uuid might not been known yet.
+//            assert lastAcceptedState.metadata().clusterUUID().equals(Metadata.UNKNOWN_CLUSTER_UUID) == false
+//                || lastAcceptedState.term() == ZEN1_BWC_TERM : "received cluster state with empty cluster uuid but not Zen1 BWC term: "
+//                    + lastAcceptedState;
+//            if (lastAcceptedState.metadata().clusterUUID().equals(Metadata.UNKNOWN_CLUSTER_UUID) == false
+//                && lastAcceptedState.metadata().clusterUUIDCommitted() == false) {
+//                if (metadataBuilder == null) {
+//                    metadataBuilder = Metadata.builder(lastAcceptedState.metadata());
+//                }
+//                metadataBuilder.clusterUUIDCommitted(true);
+//
+//                if (lastAcceptedState.term() != ZEN1_BWC_TERM) {
+//                    // Zen1 cluster-managers never publish a committed cluster UUID so if we logged this it'd happen on on every update.
+//                    // Let's just
+//                    // not log it at all in a 6.8/7.x rolling upgrade.
+//                    logger.info("cluster UUID set to [{}]", lastAcceptedState.metadata().clusterUUID());
+//                }
+//            }
+//            if (metadataBuilder != null) {
+//                setLastAcceptedState(ClusterState.builder(lastAcceptedState).metadata(metadataBuilder).build());
+//            }
         }
 
         default void updateIndexMetadataState(ClusterState clusterState, int indexMetadataVersion) {

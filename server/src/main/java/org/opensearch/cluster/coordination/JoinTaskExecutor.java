@@ -318,11 +318,17 @@ public class JoinTaskExecutor implements ClusterStateTaskExecutor<JoinTaskExecut
     }
 
     private Metadata updateMetadataWithRepositoriesMetadata(Metadata currentMetadata, RepositoriesMetadata repositoriesMetadata) {
+        Metadata metadata;
         if (repositoriesMetadata == null || repositoriesMetadata.repositories() == null || repositoriesMetadata.repositories().isEmpty()) {
-            return currentMetadata;
+            metadata = currentMetadata;
         } else {
-            return Metadata.builder(currentMetadata).putCustom(RepositoriesMetadata.TYPE, repositoriesMetadata.get()).build();
+            metadata = Metadata.builder(currentMetadata).putCustom(RepositoriesMetadata.TYPE, repositoriesMetadata.get()).build();
         }
+
+        Metadata.Builder metadataBuilder = Metadata.builder(metadata);
+        metadataBuilder.generateClusterUuidIfNeeded();
+        return metadataBuilder.build();
+
     }
 
     protected ClusterState.Builder becomeClusterManagerAndTrimConflictingNodes(ClusterState currentState, List<Task> joiningNodes) {

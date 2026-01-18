@@ -54,6 +54,7 @@ import org.opensearch.cluster.metadata.Manifest;
 import org.opensearch.cluster.metadata.Metadata;
 import org.opensearch.cluster.metadata.MetadataIndexUpgradeService;
 import org.opensearch.cluster.node.DiscoveryNode;
+import org.opensearch.cluster.node.DiscoveryNodes;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.collect.Tuple;
 import org.opensearch.common.settings.Settings;
@@ -227,6 +228,8 @@ public class GatewayMetaState implements Closeable {
                 persistedStateRegistry.addPersistedState(PersistedStateType.LOCAL, persistedState);
                 if (remotePersistedState != null) {
                     persistedStateRegistry.addPersistedState(PersistedStateType.REMOTE, remotePersistedState);
+                } else {
+                    persistedStateRegistry.addPersistedState(PersistedStateType.REMOTE, persistedState);
                 }
             } catch (IOException e) {
                 throw new OpenSearchException("failed to load metadata", e);
@@ -647,26 +650,31 @@ public class GatewayMetaState implements Closeable {
 
         @Override
         public void setLastAcceptedState(ClusterState clusterState) {
+
+            Metadata metadataToWrite = Metadata.builder().coordinationMetadata(clusterState.metadata().coordinationMetadata()).version(clusterState.version()).build();
+            DiscoveryNodes discoveryNodesToWrite = DiscoveryNodes.builder().localNodeId(clusterState.nodes().getLocalNodeId()).add(clusterState.nodes().getLocalNode()).build();
+            ClusterState clusterStateToWrite = ClusterState.builder(ClusterState.EMPTY_STATE).metadata(metadataToWrite).stateUUID(clusterState.stateUUID()).nodes(discoveryNodesToWrite).build();
+
             try {
                 if (writeNextStateFully) {
-                    getWriterSafe().writeFullStateAndCommit(currentTerm, clusterState);
+                    getWriterSafe().writeFullStateAndCommit(currentTerm, clusterStateToWrite);
                     writeNextStateFully = false;
                 } else {
                     if (clusterState.term() != lastAcceptedState.term()) {
                         assert clusterState.term() > lastAcceptedState.term() : clusterState.term() + " vs " + lastAcceptedState.term();
                         // In a new currentTerm, we cannot compare the persisted metadata's lastAcceptedVersion to those in the new state,
                         // so it's simplest to write everything again.
-                        getWriterSafe().writeFullStateAndCommit(currentTerm, clusterState);
+                        getWriterSafe().writeFullStateAndCommit(currentTerm, clusterStateToWrite);
                     } else {
                         // Within the same currentTerm, we _can_ use metadata versions to skip unnecessary writing.
-                        getWriterSafe().writeIncrementalStateAndCommit(currentTerm, lastAcceptedState, clusterState);
+                        getWriterSafe().writeIncrementalStateAndCommit(currentTerm, lastAcceptedState, clusterStateToWrite);
                     }
                 }
             } catch (Exception e) {
                 handleExceptionOnWrite(e);
             }
 
-            lastAcceptedState = clusterState;
+            lastAcceptedState = clusterStateToWrite;
         }
 
         @Override
