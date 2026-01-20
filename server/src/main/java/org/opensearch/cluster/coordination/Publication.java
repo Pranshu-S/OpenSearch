@@ -290,7 +290,7 @@ public abstract class Publication {
 
         void handlePublishResponse(PublishResponse publishResponse) {
             assert isWaitingForQuorum() : this;
-            logger.trace("handlePublishResponse: handling [{}] from [{}])", publishResponse, discoveryNode);
+            logger.info("handlePublishResponse: handling [{}] from [{}])", publishResponse, discoveryNode);
             if (applyCommitRequest.isPresent()) {
                 sendApplyCommit();
             } else {
@@ -381,7 +381,7 @@ public abstract class Publication {
             @Override
             public void onResponse(PublishWithJoinResponse response) {
                 if (isFailed()) {
-                    logger.debug("PublishResponseHandler.handleResponse: already failed, ignoring response from [{}]", discoveryNode);
+                    logger.info("PublishResponseHandler.handleResponse: already failed, ignoring response from [{}]", discoveryNode);
                     assert publicationCompletedIffAllTargetsInactiveOrCancelled();
                     return;
                 }

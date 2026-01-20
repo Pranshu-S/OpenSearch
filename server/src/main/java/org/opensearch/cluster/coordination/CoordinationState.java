@@ -138,8 +138,8 @@ public class CoordinationState {
         return getLastAcceptedRemoteState().version();
     }
 
-    public long getHighestLastAcceptedRemoteVersion() {
-        if (getLastAcceptedRemoteState() != null && getLastAcceptedRemoteVersion() > getLastAcceptedVersion()) {
+    public long getBestLastAcceptedRemoteVersion() {
+        if (getLastAcceptedRemoteState() != null) {
             return getLastAcceptedRemoteState().version();
         } else {
             return getLastAcceptedVersion();
@@ -375,7 +375,7 @@ public class CoordinationState {
             logger.debug("handleClientValue: ignored request as election not won");
             throw new CoordinationStateRejectedException("election not won");
         }
-        if (lastPublishedVersion != getHighestLastAcceptedRemoteVersion()) {
+        if (lastPublishedVersion != getBestLastAcceptedRemoteVersion()) {
             logger.debug("handleClientValue: cannot start publishing next value before accepting previous one");
             throw new CoordinationStateRejectedException("cannot start publishing next value before accepting previous one");
         }
@@ -495,11 +495,11 @@ public class CoordinationState {
      */
     public Optional<ApplyCommitRequest> handlePublishResponse(DiscoveryNode sourceNode, PublishResponse publishResponse) {
         if (electionWon == false) {
-            logger.debug("handlePublishResponse: ignored response as election not won");
+            logger.info("handlePublishResponse: ignored response as election not won");
             throw new CoordinationStateRejectedException("election not won");
         }
         if (publishResponse.getTerm() != getCurrentTerm()) {
-            logger.debug(
+            logger.info(
                 "handlePublishResponse: ignored publish response due to term mismatch (expected: [{}], actual: [{}])",
                 getCurrentTerm(),
                 publishResponse.getTerm()
@@ -509,7 +509,7 @@ public class CoordinationState {
             );
         }
         if (publishResponse.getVersion() != lastPublishedVersion) {
-            logger.debug(
+            logger.info(
                 "handlePublishResponse: ignored publish response due to version mismatch (expected: [{}], actual: [{}])",
                 lastPublishedVersion,
                 publishResponse.getVersion()
@@ -519,7 +519,7 @@ public class CoordinationState {
             );
         }
 
-        logger.trace(
+        logger.info(
             "handlePublishResponse: accepted publish response for version [{}] and term [{}] from [{}]",
             publishResponse.getVersion(),
             publishResponse.getTerm(),
@@ -527,7 +527,7 @@ public class CoordinationState {
         );
         publishVotes.addVote(sourceNode);
         if (isPublishQuorum(publishVotes)) {
-            logger.trace(
+            logger.info(
                 "handlePublishResponse: value committed for version [{}] and term [{}]",
                 publishResponse.getVersion(),
                 publishResponse.getTerm()
@@ -761,8 +761,8 @@ public class CoordinationState {
              * Setting No-op by default for LOCAL Persisted State
              */
 
-//            final ClusterState lastAcceptedState = getLastAcceptedState();
-//            Metadata.Builder metadataBuilder = commitVotingConfiguration(lastAcceptedState);
+            final ClusterState lastAcceptedState = getLastAcceptedState();
+            Metadata.Builder metadataBuilder = commitVotingConfiguration(lastAcceptedState);
 //            // if we receive a commit from a Zen1 cluster-manager that has not recovered its state yet,
 //            // the cluster uuid might not been known yet.
 //            assert lastAcceptedState.metadata().clusterUUID().equals(Metadata.UNKNOWN_CLUSTER_UUID) == false
@@ -782,9 +782,9 @@ public class CoordinationState {
 //                    logger.info("cluster UUID set to [{}]", lastAcceptedState.metadata().clusterUUID());
 //                }
 //            }
-//            if (metadataBuilder != null) {
-//                setLastAcceptedState(ClusterState.builder(lastAcceptedState).metadata(metadataBuilder).build());
-//            }
+            if (metadataBuilder != null) {
+                setLastAcceptedState(ClusterState.builder(lastAcceptedState).metadata(metadataBuilder).build());
+            }
         }
 
         default void updateIndexMetadataState(ClusterState clusterState, int indexMetadataVersion) {

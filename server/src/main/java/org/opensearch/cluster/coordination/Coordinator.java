@@ -462,7 +462,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
         ActionListener<Void> applyListener
     ) {
         synchronized (mutex) {
-            logger.trace("handleApplyCommit: applying commit {}", applyCommitRequest);
+            logger.info("handleApplyCommit: applying commit {}", applyCommitRequest);
 
             coordinationState.get().handleCommit(applyCommitRequest);
             final ClusterState committedState = hideStateIfNotRecovered(coordinationState.get().getLastAcceptedRemoteState());
@@ -527,7 +527,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
 
         synchronized (mutex) {
             final DiscoveryNode sourceNode = publishRequest.getAcceptedState().nodes().getClusterManagerNode();
-            logger.debug(
+            logger.info(
                 "handlePublishRequest: handling version [{}] from [{}]",
                 publishRequest.getAcceptedState().getVersion(),
                 sourceNode
@@ -544,7 +544,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
                 && mode == Mode.FOLLOWER
                 && Optional.of(sourceNode).equals(lastKnownLeader) == false) {
 
-                logger.debug("received cluster state from {} but currently following {}, rejecting", sourceNode, lastKnownLeader);
+                logger.info("received cluster state from {} but currently following {}, rejecting", sourceNode, lastKnownLeader);
                 throw new CoordinationStateRejectedException(
                     "received cluster state from " + sourceNode + " but currently following " + lastKnownLeader + ", rejecting"
                 );
@@ -585,6 +585,7 @@ public class Coordinator extends AbstractLifecycleComponent implements Discovery
                 becomeFollower("handlePublishRequest", sourceNode); // also updates preVoteCollector
             }
 
+            logger.info("Sending response for PublishRequest");
             return new PublishWithJoinResponse(
                 publishResponse,
                 joinWithDestination(lastJoin, sourceNode, publishRequest.getAcceptedState().term())

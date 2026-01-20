@@ -277,13 +277,13 @@ public class PublicationTransportHandler {
 
             final ClusterState lastSeen = lastSeenClusterState.get();
             if (lastSeen == null) {
-                logger.debug(() -> "Diff cannot be applied as there is no last cluster state");
+                logger.info(() -> "Diff cannot be applied as there is no last cluster state");
                 applyFullState = true;
             } else if (manifest.getDiffManifest() == null) {
-                logger.debug(() -> "There is no diff in the manifest");
+                logger.info(() -> "There is no diff in the manifest");
                 applyFullState = true;
             } else if (manifest.getDiffManifest().getFromStateUUID().equals(lastSeen.stateUUID()) == false) {
-                logger.debug(() -> "Last cluster state not compatible with the diff");
+                logger.info(() -> "Last cluster state not compatible with the diff");
                 applyFullState = true;
             }
 
@@ -311,7 +311,7 @@ public class PublicationTransportHandler {
                 }
                 return response;
             } else {
-                logger.debug(
+                logger.info(
                     () -> new ParameterizedMessage(
                         "Downloading diff cluster state for term {}, version {}, previousUUID {}, current UUID {}",
                         manifest.getClusterTerm(),
