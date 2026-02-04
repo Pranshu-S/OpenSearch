@@ -133,7 +133,7 @@ public class RemoteManifestManagerTests extends OpenSearchTestCase {
         when((blobStoreRepository.basePath())).thenReturn(blobPath);
         when(blobPath.add(anyString())).thenReturn(blobPath);
         when(blobPath.buildAsString()).thenReturn("/blob/path/");
-        when(encryptedBlobContainer.path()).thenReturn(blobPath);
+        when(mockBlobContainer.path()).thenReturn(blobPath);
         when(blobStore.blobContainer(any())).thenReturn(encryptedBlobContainer);
 
         when(mockBlobContainer.listBlobsByPrefixInSortedOrder("manifest" + DELIMITER, 1, BlobContainer.BlobNameSortOrder.LEXICOGRAPHIC))
