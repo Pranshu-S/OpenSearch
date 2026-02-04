@@ -13,13 +13,16 @@ import org.opensearch.cluster.metadata.CryptoMetadata;
 import org.opensearch.common.crypto.CryptoHandler;
 import org.opensearch.common.io.InputStreamContainer;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.mockito.ArgumentCaptor;
@@ -250,4 +253,16 @@ public class EncryptedBlobContainerTests extends OpenSearchTestCase {
         verify(cryptoHandler).estimateEncryptedLengthOfEntireContent(cryptoContext, originalSize);
     }
 
+    public void testDeleteBlobsIgnoringIfNotExistsWithTimeoutDelegation() throws IOException {
+        BlobContainer blobContainer = mock(BlobContainer.class);
+        CryptoHandler<Object, Object> cryptoHandler = mock(CryptoHandler.class);
+        EncryptedBlobContainer<Object, Object> encryptedBlobContainer = new EncryptedBlobContainer<>(blobContainer, cryptoHandler);
+
+        List<String> blobNames = Arrays.asList("blob1", "blob2");
+        TimeValue timeout = TimeValue.timeValueSeconds(30);
+
+        encryptedBlobContainer.deleteBlobsIgnoringIfNotExists(blobNames, timeout);
+
+        verify(blobContainer).deleteBlobsIgnoringIfNotExists(blobNames, timeout);
+    }
 }

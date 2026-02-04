@@ -15,6 +15,7 @@ import org.opensearch.common.crypto.CryptoHandler;
 import org.opensearch.common.crypto.DecryptedRangedStreamProvider;
 import org.opensearch.common.crypto.EncryptedHeaderContentSupplier;
 import org.opensearch.common.io.InputStreamContainer;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
 
 import java.io.IOException;
@@ -177,6 +178,11 @@ public class EncryptedBlobContainer<T, U> implements BlobContainer {
     @Override
     public void deleteBlobsIgnoringIfNotExists(List<String> blobNames) throws IOException {
         blobContainer.deleteBlobsIgnoringIfNotExists(blobNames);
+    }
+
+    @Override
+    public void deleteBlobsIgnoringIfNotExists(List<String> blobNames, TimeValue timeout) throws IOException {
+        blobContainer.deleteBlobsIgnoringIfNotExists(blobNames, timeout);
     }
 
     @Override

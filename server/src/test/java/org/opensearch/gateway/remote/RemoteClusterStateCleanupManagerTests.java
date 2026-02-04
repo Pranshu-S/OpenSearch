@@ -24,8 +24,9 @@ import org.opensearch.common.blobstore.BlobStore;
 import org.opensearch.common.blobstore.support.PlainBlobMetadata;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.AbstractAsyncTask;
-import org.opensearch.core.action.ActionListener;
+import org.opensearch.index.translog.transfer.BlobStoreTransferService;
 import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.repositories.blobstore.BlobStoreRepository;
 import org.opensearch.repositories.fs.FsRepository;
@@ -56,7 +57,13 @@ import static org.opensearch.gateway.remote.ClusterMetadataManifest.UploadedInde
 import static org.opensearch.gateway.remote.ClusterMetadataManifest.UploadedMetadataAttribute;
 import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.AsyncStaleFileDeletion;
 import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.CLUSTER_STATE_CLEANUP_INTERVAL_DEFAULT;
+import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.CLUSTER_STATE_CLEANUP_TIMEOUT_DEFAULT;
+import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.MANIFEST_CLEANUP_BATCH_SIZE_DEFAULT;
+import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.MANIFEST_CLEANUP_MAX_BATCHES_DEFAULT;
+import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING;
 import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING;
+import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING;
+import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING;
 import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.RETAINED_MANIFESTS;
 import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.SKIP_CLEANUP_STATE_CHANGES;
 import static org.opensearch.gateway.remote.RemoteClusterStateUtils.CLUSTER_STATE_PATH_TOKEN;
@@ -74,6 +81,7 @@ import static org.opensearch.node.remotestore.RemoteStoreNodeAttribute.REMOTE_ST
 import static org.opensearch.node.remotestore.RemoteStoreNodeAttribute.REMOTE_STORE_ROUTING_TABLE_REPOSITORY_NAME_ATTRIBUTE_KEY;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
@@ -287,10 +295,14 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
                 coordinationMetadata.getUploadedFilename(),
                 settingMetadata.getUploadedFilename(),
                 new BlobPath().add(GLOBAL_METADATA_PATH_TOKEN).buildAsString() + "global_metadata.dat"
-            )
+            ),
+            CLUSTER_STATE_CLEANUP_TIMEOUT_DEFAULT
         );
-        verify(container).deleteBlobsIgnoringIfNotExists(List.of(getFormattedIndexFileName(index1Metadata.getUploadedFilePath())));
-        verify(container).deleteBlobsIgnoringIfNotExists(List.of("restore_file1", "snapshot_file1"));
+        verify(container).deleteBlobsIgnoringIfNotExists(
+            List.of(getFormattedIndexFileName(index1Metadata.getUploadedFilePath())),
+            CLUSTER_STATE_CLEANUP_TIMEOUT_DEFAULT
+        );
+        verify(container).deleteBlobsIgnoringIfNotExists(List.of("restore_file1", "snapshot_file1"), CLUSTER_STATE_CLEANUP_TIMEOUT_DEFAULT);
         Set<String> staleManifest = new HashSet<>();
         inactiveBlobs.forEach(
             blob -> staleManifest.add(
@@ -298,7 +310,7 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
                     .name()
             )
         );
-        verify(container).deleteBlobsIgnoringIfNotExists(new ArrayList<>(staleManifest));
+        verify(container).deleteBlobsIgnoringIfNotExists(new ArrayList<>(staleManifest), CLUSTER_STATE_CLEANUP_TIMEOUT_DEFAULT);
         verify(remoteRoutingTableService).deleteStaleIndexRoutingPaths(List.of(index3Metadata.getUploadedFilename()));
     }
 
@@ -679,12 +691,7 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
             }
             return null;
         }).when(blobContainer)
-            .listBlobsByPrefixInSortedOrder(
-                any(String.class),
-                any(int.class),
-                any(BlobContainer.BlobNameSortOrder.class),
-                any(ActionListener.class)
-            );
+            .listBlobsByPrefixInSortedOrder(any(String.class), any(int.class), any(BlobContainer.BlobNameSortOrder.class));
 
         remoteClusterStateCleanupManager.start();
         remoteClusterStateCleanupManager.deleteStaleClusterMetadata("cluster-name", "cluster-uuid", RETAINED_MANIFESTS);
@@ -789,5 +796,303 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
         // Task is still scheduled after the failure
         assertTrue(task.isScheduled());
         assertEquals(2, callCount.get());
+    }
+
+    public void testRemoteClusterStateCleanupBatchSizeSetting() {
+        remoteClusterStateCleanupManager.start();
+
+        assertEquals(
+            RemoteClusterStateCleanupManager.MANIFEST_CLEANUP_BATCH_SIZE_DEFAULT,
+            clusterSettings.get(RemoteClusterStateCleanupManager.REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING).intValue()
+        );
+
+        int batchSize = randomIntBetween(100, 5000);
+        Settings newSettings = Settings.builder().put("cluster.remote_store.state.cleanup_batch_size", batchSize).build();
+        clusterSettings.applySettings(newSettings);
+        assertEquals(
+            batchSize,
+            clusterSettings.get(RemoteClusterStateCleanupManager.REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING).intValue()
+        );
+    }
+
+    public void testRemoteClusterStateCleanupMaxBatchesSetting() {
+        remoteClusterStateCleanupManager.start();
+
+        assertEquals(
+            RemoteClusterStateCleanupManager.MANIFEST_CLEANUP_MAX_BATCHES_DEFAULT,
+            clusterSettings.get(RemoteClusterStateCleanupManager.REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING).intValue()
+        );
+
+        int maxBatches = randomIntBetween(10, 500);
+        Settings newSettings = Settings.builder().put("cluster.remote_store.state.cleanup_max_batches", maxBatches).build();
+        clusterSettings.applySettings(newSettings);
+        assertEquals(
+            maxBatches,
+            clusterSettings.get(RemoteClusterStateCleanupManager.REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING).intValue()
+        );
+    }
+
+    public void testRemoteClusterStateCleanupTimeoutSetting() {
+        remoteClusterStateCleanupManager.start();
+        assertEquals(
+            RemoteClusterStateCleanupManager.CLUSTER_STATE_CLEANUP_TIMEOUT_DEFAULT,
+            clusterSettings.get(RemoteClusterStateCleanupManager.REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING)
+        );
+
+        TimeValue timeout = TimeValue.timeValueSeconds(randomIntBetween(30, 300));
+        Settings newSettings = Settings.builder().put("cluster.remote_store.state.cleanup_timeout", timeout).build();
+        clusterSettings.applySettings(newSettings);
+        assertEquals(timeout, clusterSettings.get(RemoteClusterStateCleanupManager.REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING));
+    }
+
+    public void testTimeoutSettingValidation() {
+        Settings validSettings = Settings.builder().put("cluster.remote_store.state.cleanup_timeout", -1).build();
+        ClusterSettings validClusterSettings = new ClusterSettings(validSettings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
+        assertEquals(
+            TimeValue.MINUS_ONE,
+            validClusterSettings.get(RemoteClusterStateCleanupManager.REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING)
+        );
+    }
+
+    public void testNewSettingsDefaults() {
+        assertEquals(
+            MANIFEST_CLEANUP_BATCH_SIZE_DEFAULT,
+            REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING.getDefault(Settings.EMPTY).intValue()
+        );
+        assertEquals(
+            MANIFEST_CLEANUP_MAX_BATCHES_DEFAULT,
+            REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING.getDefault(Settings.EMPTY).intValue()
+        );
+        assertEquals(CLUSTER_STATE_CLEANUP_TIMEOUT_DEFAULT, REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING.getDefault(Settings.EMPTY));
+    }
+
+    public void testBatchSizeSettingUpdate() {
+        remoteClusterStateCleanupManager.start();
+
+        assertEquals(MANIFEST_CLEANUP_BATCH_SIZE_DEFAULT, clusterSettings.get(REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING).intValue());
+
+        int newBatchSize = randomIntBetween(100, 5000);
+        Settings newSettings = Settings.builder().put(REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING.getKey(), newBatchSize).build();
+        clusterSettings.applySettings(newSettings);
+
+        assertEquals(newBatchSize, clusterSettings.get(REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING).intValue());
+    }
+
+    public void testMaxBatchesSettingUpdate() {
+        remoteClusterStateCleanupManager.start();
+
+        assertEquals(
+            MANIFEST_CLEANUP_MAX_BATCHES_DEFAULT,
+            clusterSettings.get(REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING).intValue()
+        );
+
+        int newMaxBatches = randomIntBetween(10, 500);
+        Settings newSettings = Settings.builder().put(REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING.getKey(), newMaxBatches).build();
+        clusterSettings.applySettings(newSettings);
+
+        assertEquals(newMaxBatches, clusterSettings.get(REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING).intValue());
+    }
+
+    public void testTimeoutSettingUpdate() {
+        remoteClusterStateCleanupManager.start();
+
+        assertEquals(CLUSTER_STATE_CLEANUP_TIMEOUT_DEFAULT, clusterSettings.get(REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING));
+
+        TimeValue newTimeout = TimeValue.timeValueSeconds(randomIntBetween(30, 300));
+        Settings newSettings = Settings.builder().put(REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING.getKey(), newTimeout).build();
+        clusterSettings.applySettings(newSettings);
+
+        assertEquals(newTimeout, clusterSettings.get(REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING));
+    }
+
+    public void testBatchedDeletionWithSingleBatch() throws Exception {
+        String clusterName = "test-cluster";
+        String clusterUUID = "test-uuid";
+        int manifestsToRetain = RETAINED_MANIFESTS;
+
+        List<BlobMetadata> manifests = new ArrayList<>();
+        for (int i = 0; i < 15; i++) {
+            manifests.add(new PlainBlobMetadata("manifest" + i + ".dat", 1L));
+        }
+
+        when(remoteManifestManager.getManifestFolderPath(eq(clusterName), eq(clusterUUID))).thenReturn(
+            new BlobPath().add(encodeString(clusterName)).add(CLUSTER_STATE_PATH_TOKEN).add(clusterUUID).add(MANIFEST)
+        );
+
+        RemoteClusterStateCleanupManager spyManager = spy(remoteClusterStateCleanupManager);
+        BlobStoreTransferService mockTransferService = mock(BlobStoreTransferService.class);
+        when(mockTransferService.listAllInSortedOrder(any(), eq(MANIFEST), anyInt())).thenReturn(
+            manifests,
+            manifests.subList(0, manifestsToRetain)
+        );
+
+        CountDownLatch latch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            latch.countDown();
+            return null;
+        }).when(spyManager).deleteClusterMetadata(anyString(), anyString(), any(), any());
+
+        doAnswer(invocation -> mockTransferService).when(spyManager).getBlobStoreTransferService();
+
+        spyManager.start();
+        spyManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain);
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+
+        verify(spyManager, times(1)).deleteClusterMetadata(
+            eq(clusterName),
+            eq(clusterUUID),
+            eq(manifests.subList(0, manifestsToRetain)),
+            eq(manifests.subList(manifestsToRetain, manifests.size()))
+        );
+    }
+
+    public void testBatchedDeletionWithMultipleBatches() throws Exception {
+        String clusterName = "test-cluster";
+        String clusterUUID = "test-uuid";
+        int manifestsToRetain = RETAINED_MANIFESTS;
+        int batchSize = 50;
+        int maxBatches = 3;
+
+        Settings newSettings = Settings.builder()
+            .put(REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING.getKey(), batchSize)
+            .put(REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING.getKey(), maxBatches)
+            .build();
+        clusterSettings.applySettings(newSettings);
+
+        when(remoteManifestManager.getManifestFolderPath(eq(clusterName), eq(clusterUUID))).thenReturn(
+            new BlobPath().add(encodeString(clusterName)).add(CLUSTER_STATE_PATH_TOKEN).add(clusterUUID).add(MANIFEST)
+        );
+
+        RemoteClusterStateCleanupManager spyManager = spy(remoteClusterStateCleanupManager);
+        BlobStoreTransferService mockTransferService = mock(BlobStoreTransferService.class);
+
+        List<BlobMetadata> batch1 = new ArrayList<>();
+        List<BlobMetadata> batch2 = new ArrayList<>();
+        List<BlobMetadata> batch3 = new ArrayList<>();
+
+        for (int i = 0; i < batchSize; i++) {
+            batch1.add(new PlainBlobMetadata("manifest" + i + ".dat", 1L));
+            batch2.add(new PlainBlobMetadata("manifest" + (i + batchSize) + ".dat", 1L));
+            batch3.add(new PlainBlobMetadata("manifest" + (i + 2 * batchSize) + ".dat", 1L));
+        }
+
+        when(mockTransferService.listAllInSortedOrder(any(), eq(MANIFEST), eq(batchSize))).thenReturn(batch1, batch2, batch3);
+
+        CountDownLatch latch = new CountDownLatch(maxBatches);
+        doAnswer(invocation -> {
+            latch.countDown();
+            return null;
+        }).when(spyManager).deleteClusterMetadata(anyString(), anyString(), any(), any());
+
+        doAnswer(invocation -> mockTransferService).when(spyManager).getBlobStoreTransferService();
+
+        spyManager.start();
+        spyManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain);
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+
+        verify(spyManager, times(maxBatches)).deleteClusterMetadata(anyString(), anyString(), any(), any());
+    }
+
+    public void testBatchedDeletionStopsWhenManifestsLessThanRetained() throws Exception {
+        String clusterName = "test-cluster";
+        String clusterUUID = "test-uuid";
+        int manifestsToRetain = RETAINED_MANIFESTS;
+
+        List<BlobMetadata> manifests = new ArrayList<>();
+        for (int i = 0; i < manifestsToRetain - 2; i++) {
+            manifests.add(new PlainBlobMetadata("manifest" + i + ".dat", 1L));
+        }
+
+        when(remoteManifestManager.getManifestFolderPath(eq(clusterName), eq(clusterUUID))).thenReturn(
+            new BlobPath().add(encodeString(clusterName)).add(CLUSTER_STATE_PATH_TOKEN).add(clusterUUID).add(MANIFEST)
+        );
+
+        RemoteClusterStateCleanupManager spyManager = spy(remoteClusterStateCleanupManager);
+        BlobStoreTransferService mockTransferService = mock(BlobStoreTransferService.class);
+        when(mockTransferService.listAllInSortedOrder(any(), eq(MANIFEST), anyInt())).thenReturn(manifests);
+
+        CountDownLatch completionLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            fail("deleteClusterMetadata should not be called when manifests < retained");
+            return null;
+        }).when(spyManager).deleteClusterMetadata(anyString(), anyString(), any(), any());
+
+        doAnswer(invocation -> mockTransferService).when(spyManager).getBlobStoreTransferService();
+
+        threadPool.executor(ThreadPool.Names.REMOTE_PURGE).execute(() -> {
+            try {
+                spyManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain);
+            } finally {
+                completionLatch.countDown();
+            }
+        });
+
+        spyManager.start();
+
+        assertTrue(completionLatch.await(5, TimeUnit.SECONDS));
+
+        verify(spyManager, times(0)).deleteClusterMetadata(anyString(), anyString(), any(), any());
+    }
+
+    public void testBatchedDeletionExhaustsMaxBatches() throws Exception {
+        String clusterName = "test-cluster";
+        String clusterUUID = "test-uuid";
+        int manifestsToRetain = RETAINED_MANIFESTS;
+        int batchSize = 20;
+        int maxBatches = 2;
+
+        Settings newSettings = Settings.builder()
+            .put(REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING.getKey(), batchSize)
+            .put(REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING.getKey(), maxBatches)
+            .build();
+        clusterSettings.applySettings(newSettings);
+
+        when(remoteManifestManager.getManifestFolderPath(eq(clusterName), eq(clusterUUID))).thenReturn(
+            new BlobPath().add(encodeString(clusterName)).add(CLUSTER_STATE_PATH_TOKEN).add(clusterUUID).add(MANIFEST)
+        );
+
+        RemoteClusterStateCleanupManager spyManager = spy(remoteClusterStateCleanupManager);
+        BlobStoreTransferService mockTransferService = mock(BlobStoreTransferService.class);
+
+        List<BlobMetadata> batch = new ArrayList<>();
+        for (int i = 0; i < batchSize; i++) {
+            batch.add(new PlainBlobMetadata("manifest" + i + ".dat", 1L));
+        }
+
+        when(mockTransferService.listAllInSortedOrder(any(), eq(MANIFEST), eq(batchSize))).thenReturn(batch);
+
+        CountDownLatch latch = new CountDownLatch(maxBatches);
+        doAnswer(invocation -> {
+            latch.countDown();
+            return null;
+        }).when(spyManager).deleteClusterMetadata(anyString(), anyString(), any(), any());
+
+        doAnswer(invocation -> mockTransferService).when(spyManager).getBlobStoreTransferService();
+
+        spyManager.start();
+        spyManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain);
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+
+        verify(spyManager, times(maxBatches)).deleteClusterMetadata(anyString(), anyString(), any(), any());
+    }
+
+    public void testDeleteStalePathsWithTimeout() throws IOException {
+        List<String> stalePaths = Arrays.asList("path1", "path2", "path3");
+        TimeValue timeout = TimeValue.timeValueSeconds(30);
+
+        Settings newSettings = Settings.builder().put(REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING.getKey(), timeout).build();
+        clusterSettings.applySettings(newSettings);
+
+        RemoteClusterStateCleanupManager spyManager = spy(remoteClusterStateCleanupManager);
+        BlobStoreTransferService mockTransferService = mock(BlobStoreTransferService.class);
+        doAnswer(invocation -> mockTransferService).when(spyManager).getBlobStoreTransferService();
+
+        spyManager.start();
+        spyManager.deleteStalePaths(stalePaths);
+
+        verify(mockTransferService).deleteBlobs(eq(BlobPath.cleanPath()), eq(stalePaths), eq(timeout));
     }
 }

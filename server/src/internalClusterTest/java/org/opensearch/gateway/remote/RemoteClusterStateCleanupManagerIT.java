@@ -294,4 +294,66 @@ public class RemoteClusterStateCleanupManagerIT extends RemoteStoreBaseIntegTest
             RemoteStoreEnums.PathHashAlgorithm.FNV_1A_BASE64
         );
     }
+
+    public void testRemoteCleanupMultipleBatchDeletion() throws Exception {
+        int shardCount = randomIntBetween(1, 2);
+        int replicaCount = 1;
+        int dataNodeCount = shardCount * (replicaCount + 1);
+        int clusterManagerNodeCount = 1;
+
+        initialTestSetup(shardCount, replicaCount, dataNodeCount, clusterManagerNodeCount);
+
+        ClusterUpdateSettingsResponse response = client().admin()
+            .cluster()
+            .prepareUpdateSettings()
+            .setPersistentSettings(
+                Settings.builder()
+                    .put("cluster.remote_store.state.cleanup_batch_size", 25)
+                    .put("cluster.remote_store.state.cleanup_max_batches", 3)
+                    .put(REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING.getKey(), "100ms")
+            )
+            .get();
+        assertTrue(response.isAcknowledged());
+
+        updateClusterStateNTimes(50);
+
+        RepositoriesService repositoriesService = internalCluster().getClusterManagerNodeInstance(RepositoriesService.class);
+        BlobStoreRepository repository = (BlobStoreRepository) repositoriesService.repository(REPOSITORY_NAME);
+        BlobPath manifestContainerPath = getBaseMetadataPath(repository).add("manifest");
+
+        assertBusy(() -> {
+            int manifestFiles = repository.blobStore().blobContainer(manifestContainerPath).listBlobsByPrefix("manifest").size();
+            logger.info("number of current manifest files: {}", manifestFiles);
+            assertTrue("Manifests should be cleaned up in batches", manifestFiles < 50);
+        });
+
+    }
+
+    public void testRemoteCleanupDeletionTimeout() throws Exception {
+        int shardCount = randomIntBetween(1, 2);
+        int replicaCount = 1;
+        int dataNodeCount = shardCount * (replicaCount + 1);
+        int clusterManagerNodeCount = 1;
+
+        initialTestSetup(shardCount, replicaCount, dataNodeCount, clusterManagerNodeCount);
+
+        ClusterUpdateSettingsResponse response = client().admin()
+            .cluster()
+            .prepareUpdateSettings()
+            .setPersistentSettings(
+                Settings.builder()
+                    .put("cluster.remote_store.state.cleanup_timeout", "30s")
+                    .put(REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING.getKey(), "100ms")
+            )
+            .get();
+        assertTrue(response.isAcknowledged());
+
+        updateClusterStateNTimes(15);
+
+        RemoteClusterStateCleanupManager remoteClusterStateCleanupManager = internalCluster().getClusterManagerNodeInstance(
+            RemoteClusterStateCleanupManager.class
+        );
+
+        assertBusy(() -> { assertTrue(remoteClusterStateCleanupManager.getStaleFileDeletionTask().isScheduled()); });
+    }
 }

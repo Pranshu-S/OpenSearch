@@ -82,6 +82,7 @@ import org.opensearch.common.blobstore.support.AbstractBlobContainer;
 import org.opensearch.common.blobstore.support.PlainBlobMetadata;
 import org.opensearch.common.collect.Tuple;
 import org.opensearch.common.io.InputStreamContainer;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.FutureUtils;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.common.Strings;
@@ -100,6 +101,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -120,7 +122,7 @@ import static org.opensearch.repositories.s3.utils.SseKmsUtil.configureEncryptio
 class S3BlobContainer extends AbstractBlobContainer implements AsyncMultiStreamBlobContainer {
 
     private static final Logger logger = LogManager.getLogger(S3BlobContainer.class);
-    private static final long DEFAULT_OPERATION_TIMEOUT = TimeUnit.SECONDS.toSeconds(30);
+    private static final TimeValue DEFAULT_OPERATION_TIMEOUT = TimeValue.timeValueSeconds(30);
 
     private final S3BlobStore blobStore;
     private final String keyPath;
@@ -426,19 +428,32 @@ class S3BlobContainer extends AbstractBlobContainer implements AsyncMultiStreamB
     public DeleteResult delete() throws IOException {
         PlainActionFuture<DeleteResult> future = new PlainActionFuture<>();
         deleteAsync(future);
-        return getFutureValue(future);
+        return getFutureValue(future, DEFAULT_OPERATION_TIMEOUT);
     }
 
     @Override
     public void deleteBlobsIgnoringIfNotExists(List<String> blobNames) throws IOException {
         PlainActionFuture<Void> future = new PlainActionFuture<>();
         deleteBlobsAsyncIgnoringIfNotExists(blobNames, future);
-        getFutureValue(future);
+        getFutureValue(future, DEFAULT_OPERATION_TIMEOUT);
     }
 
-    private <T> T getFutureValue(PlainActionFuture<T> future) throws IOException {
+    @Override
+    public void deleteBlobsIgnoringIfNotExists(List<String> blobNames, TimeValue timeout) throws IOException {
+        PlainActionFuture<Void> future = new PlainActionFuture<>();
+        deleteBlobsAsyncIgnoringIfNotExists(blobNames, future);
+        getFutureValue(future, timeout);
+    }
+
+    // package private for testing
+    <T> T getFutureValue(PlainActionFuture<T> future, TimeValue timeout) throws IOException {
+
         try {
-            return future.get(DEFAULT_OPERATION_TIMEOUT, TimeUnit.SECONDS);
+            if (timeout.equals(TimeValue.MINUS_ONE)) {
+                return future.get();
+            } else {
+                return future.get(timeout.seconds(), TimeUnit.SECONDS);
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Future got interrupted", e);
@@ -449,7 +464,7 @@ class S3BlobContainer extends AbstractBlobContainer implements AsyncMultiStreamB
             throw new RuntimeException(e.getCause());
         } catch (TimeoutException e) {
             FutureUtils.cancel(future);
-            throw new IOException("Delete operation timed out after 30 seconds", e);
+            throw new IOException(String.format(Locale.ROOT, "Delete operation timed out after %s seconds", timeout.seconds()), e);
         }
     }
 

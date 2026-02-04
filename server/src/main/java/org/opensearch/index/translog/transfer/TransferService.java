@@ -14,6 +14,7 @@ import org.opensearch.common.blobstore.BlobMetadata;
 import org.opensearch.common.blobstore.BlobPath;
 import org.opensearch.common.blobstore.InputStreamWithMetadata;
 import org.opensearch.common.blobstore.stream.write.WritePriority;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.index.translog.transfer.FileSnapshot.TransferFileSnapshot;
 
@@ -100,6 +101,10 @@ public interface TransferService {
     ) throws IOException;
 
     void deleteBlobs(Iterable<String> path, List<String> fileNames) throws IOException;
+
+    default void deleteBlobs(Iterable<String> path, List<String> fileNames, TimeValue timeout) throws IOException {
+        deleteBlobs(path, fileNames);
+    }
 
     /**
      * Deletes the list of files in async and uses the listener to propagate success or failure.
