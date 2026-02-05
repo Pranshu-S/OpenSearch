@@ -41,7 +41,6 @@ import org.opensearch.core.action.ActionListener;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.NoSuchFileException;
 import java.util.ArrayList;
@@ -291,7 +290,7 @@ public interface BlobContainer {
      * @throws  IOException if a subset of blob exists but could not be deleted.
      */
     default void deleteBlobsIgnoringIfNotExists(List<String> blobNames, TimeValue timeout) throws IOException {
-        throw new UnsupportedEncodingException("deleteBlobsIgnoringIfNotExists with timeout is not supported");
+        throw new UnsupportedOperationException("deleteBlobsIgnoringIfNotExists with timeout is not supported");
     }
 
     /**
