@@ -103,7 +103,7 @@ public interface TransferService {
     void deleteBlobs(Iterable<String> path, List<String> fileNames) throws IOException;
 
     default void deleteBlobs(Iterable<String> path, List<String> fileNames, TimeValue timeout) throws IOException {
-        deleteBlobs(path, fileNames);
+        throw new UnsupportedOperationException("deleteBlobs with timeout is not supported");
     }
 
     /**

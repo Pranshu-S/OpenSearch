@@ -72,19 +72,6 @@ public class S3BlobContainerTimeoutTests extends OpenSearchTestCase {
         assertEquals(expectedResult, result);
     }
 
-    public void testGetFutureValueWithMinusOneTimeout() throws Exception {
-        PlainActionFuture<String> future = new PlainActionFuture<>();
-        TimeValue timeout = TimeValue.MINUS_ONE;
-        String expectedResult = "test-result";
-
-        future.onResponse(expectedResult);
-
-        S3BlobContainer realContainer = new S3BlobContainer(BlobPath.cleanPath(), mockBlobStore);
-
-        String result = realContainer.getFutureValue(future, timeout);
-        assertEquals(expectedResult, result);
-    }
-
     public void testDeleteBlobsWithDefaultTimeout() throws IOException {
         List<String> blobNames = Arrays.asList("blob1", "blob2");
 

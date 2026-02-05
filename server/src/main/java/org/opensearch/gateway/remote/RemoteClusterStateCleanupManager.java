@@ -54,9 +54,9 @@ public class RemoteClusterStateCleanupManager implements Closeable {
     public static final TimeValue CLUSTER_STATE_CLEANUP_INTERVAL_MINIMUM = TimeValue.MINUS_ONE;
     public static final TimeValue CLUSTER_STATE_CLEANUP_TIMEOUT_DEFAULT = TimeValue.MINUS_ONE;
 
-    public static final String REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING_NAME = "cluster.remote_store.state.cleanup_batch_size";
-    public static final String REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING_NAME = "cluster.remote_store.state.cleanup_timeout";
-    public static final String REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING_NAME = "cluster.remote_store.state.cleanup_max_batches";
+    public static final String REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING_NAME = "cluster.remote_store.state.cleanup.batch_size";
+    public static final String REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING_NAME = "cluster.remote_store.state.cleanup.timeout";
+    public static final String REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING_NAME = "cluster.remote_store.state.cleanup.max_batches";
 
     /**
      * Setting to specify the interval to do run stale file cleanup job
@@ -418,7 +418,6 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                     e
                 );
                 remoteStateStats.indexRoutingFilesCleanupAttemptFailed();
-                throw e;
             }
 
             try {
@@ -429,7 +428,6 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                     e
                 );
                 remoteStateStats.indicesRoutingDiffFileCleanupAttemptFailed();
-                throw e;
             }
 
             // Delete Manifests in the very end to avoid dangling routing files in-case deletion of stale index routing
@@ -501,7 +499,7 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                     logger.warn("Exhausted batch limit for deleting entities. Attempted [{}] batches", cleanupMaxBatches);
                 }
             } catch (Exception e) {
-                logger.error("Error during batch cleanup of manifests for cluster [{}]. Exception: {}", clusterName, e);
+                logger.error("Exception occurred while deleting Remote Cluster Metadata for clusterUUIDs [{}]. Exception: {}", clusterUUID, e);
             } finally {
                 deleteStaleMetadataRunning.set(false);
                 logger.debug("Released cleanup lock for cluster [{}]", clusterName);
