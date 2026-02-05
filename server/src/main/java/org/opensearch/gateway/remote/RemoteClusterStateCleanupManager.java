@@ -499,7 +499,11 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                     logger.warn("Exhausted batch limit for deleting entities. Attempted [{}] batches", cleanupMaxBatches);
                 }
             } catch (Exception e) {
-                logger.error("Exception occurred while deleting Remote Cluster Metadata for clusterUUIDs [{}]. Exception: {}", clusterUUID, e);
+                logger.error(
+                    "Exception occurred while deleting Remote Cluster Metadata for clusterUUIDs [{}]. Exception: {}",
+                    clusterUUID,
+                    e
+                );
             } finally {
                 deleteStaleMetadataRunning.set(false);
                 logger.debug("Released cleanup lock for cluster [{}]", clusterName);
