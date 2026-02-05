@@ -8,6 +8,7 @@
 
 package org.opensearch.cluster.routing.remote;
 
+import org.apache.logging.log4j.LogManager;
 import org.opensearch.Version;
 import org.opensearch.action.LatchedActionListener;
 import org.opensearch.cluster.Diff;
@@ -15,6 +16,7 @@ import org.opensearch.cluster.routing.IndexRoutingTable;
 import org.opensearch.cluster.routing.RoutingTable;
 import org.opensearch.cluster.routing.StringKeyDiffProvider;
 import org.opensearch.common.lifecycle.LifecycleComponent;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.gateway.remote.ClusterMetadataManifest;
 
 import java.io.IOException;
@@ -75,5 +77,15 @@ public interface RemoteRoutingTableService extends LifecycleComponent {
     void deleteStaleIndexRoutingPaths(List<String> stalePaths) throws IOException;
 
     void deleteStaleIndexRoutingDiffPaths(List<String> stalePaths) throws IOException;
+
+    default void deleteStaleIndexRoutingPaths(List<String> stalePaths, TimeValue timeout) throws IOException {
+        LogManager.getLogger(this.getClass()).warn("No implementation exists for using timeout, skipping timeout input");
+        deleteStaleIndexRoutingPaths(stalePaths);
+    }
+
+    default void deleteStaleIndexRoutingDiffPaths(List<String> stalePaths, TimeValue timeout) throws IOException {
+        LogManager.getLogger(this.getClass()).warn("No implementation exists for using timeout, skipping timeout input");
+        deleteStaleIndexRoutingDiffPaths(stalePaths);
+    }
 
 }

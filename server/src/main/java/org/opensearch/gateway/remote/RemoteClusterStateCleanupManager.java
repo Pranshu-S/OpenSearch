@@ -409,10 +409,9 @@ public class RemoteClusterStateCleanupManager implements Closeable {
             deleteStalePaths(new ArrayList<>(staleGlobalMetadataPaths));
             deleteStalePaths(new ArrayList<>(staleIndexMetadataPaths));
             deleteStalePaths(new ArrayList<>(staleEphemeralAttributePaths));
-            deleteStalePaths(new ArrayList<>(staleManifestPaths));
 
             try {
-                remoteRoutingTableService.deleteStaleIndexRoutingPaths(new ArrayList<>(staleIndexRoutingPaths));
+                remoteRoutingTableService.deleteStaleIndexRoutingPaths(new ArrayList<>(staleIndexRoutingPaths), cleanupTimeout);
             } catch (IOException e) {
                 logger.error(
                     () -> new ParameterizedMessage("Error while deleting stale index routing files {}", staleIndexRoutingPaths),
@@ -423,7 +422,7 @@ public class RemoteClusterStateCleanupManager implements Closeable {
             }
 
             try {
-                remoteRoutingTableService.deleteStaleIndexRoutingDiffPaths(new ArrayList<>(staleIndexRoutingDiffPaths));
+                remoteRoutingTableService.deleteStaleIndexRoutingDiffPaths(new ArrayList<>(staleIndexRoutingDiffPaths), cleanupTimeout);
             } catch (IOException e) {
                 logger.error(
                     () -> new ParameterizedMessage("Error while deleting stale index routing diff files {}", staleIndexRoutingDiffPaths),
@@ -432,6 +431,10 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                 remoteStateStats.indicesRoutingDiffFileCleanupAttemptFailed();
                 throw e;
             }
+
+            // Delete Manifests in the very end to avoid dangling routing files in-case deletion of stale index routing
+            // files after deleting manifests
+            deleteStalePaths(new ArrayList<>(staleManifestPaths));
 
         } catch (IllegalStateException e) {
             logger.error("Error while fetching Remote Cluster Metadata manifests", e);
