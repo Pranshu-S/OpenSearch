@@ -24,6 +24,7 @@ import org.opensearch.common.remote.RemoteWritableEntityStore;
 import org.opensearch.common.remote.RemoteWriteableEntityBlobStore;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.compress.Compressor;
@@ -281,6 +282,28 @@ public class InternalRemoteRoutingTableService extends AbstractLifecycleComponen
         try {
             logger.debug(() -> "Deleting stale index routing diff files from remote - " + stalePaths);
             blobStoreRepository.blobStore().blobContainer(BlobPath.cleanPath()).deleteBlobsIgnoringIfNotExists(stalePaths);
+        } catch (IOException e) {
+            logger.error(() -> new ParameterizedMessage("Failed to delete some stale index routing diff paths from {}", stalePaths), e);
+            throw e;
+        }
+    }
+
+    @Override
+    public void deleteStaleIndexRoutingPaths(List<String> stalePaths, TimeValue timeValue) throws IOException {
+        try {
+            logger.debug(() -> "Deleting stale index routing files from remote - " + stalePaths);
+            blobStoreRepository.blobStore().blobContainer(BlobPath.cleanPath()).deleteBlobsIgnoringIfNotExists(stalePaths, timeValue);
+        } catch (IOException e) {
+            logger.error(() -> new ParameterizedMessage("Failed to delete some stale index routing paths from {}", stalePaths), e);
+            throw e;
+        }
+    }
+
+    @Override
+    public void deleteStaleIndexRoutingDiffPaths(List<String> stalePaths, TimeValue timeValue) throws IOException {
+        try {
+            logger.debug(() -> "Deleting stale index routing diff files from remote - " + stalePaths);
+            blobStoreRepository.blobStore().blobContainer(BlobPath.cleanPath()).deleteBlobsIgnoringIfNotExists(stalePaths, timeValue);
         } catch (IOException e) {
             logger.error(() -> new ParameterizedMessage("Failed to delete some stale index routing diff paths from {}", stalePaths), e);
             throw e;
