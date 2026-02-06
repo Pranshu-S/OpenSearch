@@ -51,8 +51,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
-import org.mockito.ArgumentCaptor;
-
 import static org.opensearch.gateway.remote.ClusterMetadataManifest.CODEC_V1;
 import static org.opensearch.gateway.remote.ClusterMetadataManifest.CODEC_V2;
 import static org.opensearch.gateway.remote.ClusterMetadataManifest.CODEC_V3;
@@ -1184,12 +1182,17 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
 
         doAnswer(invocation -> mockTransferService).when(cleanUpManager).getBlobStoreTransferService();
 
-        doNothing().when(cleanUpManager).deleteClusterMetadata(anyString(), anyString(), any(), any());
+        CountDownLatch latch = new CountDownLatch(2);
+        doAnswer(invocation -> {
+            latch.countDown();
+            return null;
+        }).when(cleanUpManager).deleteClusterMetadata(anyString(), anyString(), any(), any());
 
         cleanUpManager.start();
         cleanUpManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain, 20);
 
-        ArgumentCaptor<List<BlobMetadata>> staleCaptor = ArgumentCaptor.forClass(List.class);
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+
         verify(cleanUpManager, times(1)).deleteClusterMetadata(
             eq(clusterName),
             eq(clusterUUID),
