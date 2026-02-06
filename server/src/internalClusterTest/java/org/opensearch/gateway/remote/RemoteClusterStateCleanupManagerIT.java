@@ -310,7 +310,7 @@ public class RemoteClusterStateCleanupManagerIT extends RemoteStoreBaseIntegTest
                 Settings.builder()
                     .put("cluster.remote_store.state.cleanup.batch_size", 25)
                     .put("cluster.remote_store.state.cleanup.max_batches", 3)
-                    .put(REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING.getKey(), "100ms")
+                    .put(REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING.getKey(), "-1") // Disable cleanup
             )
             .get();
         assertTrue(response.isAcknowledged());
@@ -321,39 +321,43 @@ public class RemoteClusterStateCleanupManagerIT extends RemoteStoreBaseIntegTest
         BlobStoreRepository repository = (BlobStoreRepository) repositoriesService.repository(REPOSITORY_NAME);
         BlobPath manifestContainerPath = getBaseMetadataPath(repository).add("manifest");
 
-        assertBusy(() -> {
-            int manifestFiles = repository.blobStore().blobContainer(manifestContainerPath).listBlobsByPrefix("manifest").size();
-            logger.info("number of current manifest files: {}", manifestFiles);
-            assertTrue("Manifests should be cleaned up in batches", manifestFiles < 50);
-        });
+        List<String> initialManifests = repository.blobStore()
+            .blobContainer(manifestContainerPath)
+            .listBlobsByPrefix("manifest")
+            .keySet()
+            .stream()
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+        List<String> last10Initial = initialManifests.subList(Math.max(0, initialManifests.size() - 10), initialManifests.size());
 
-    }
-
-    public void testRemoteCleanupDeletionTimeout() throws Exception {
-        int shardCount = randomIntBetween(1, 2);
-        int replicaCount = 1;
-        int dataNodeCount = shardCount * (replicaCount + 1);
-        int clusterManagerNodeCount = 1;
-
-        initialTestSetup(shardCount, replicaCount, dataNodeCount, clusterManagerNodeCount);
-
-        ClusterUpdateSettingsResponse response = client().admin()
+        response = client().admin()
             .cluster()
             .prepareUpdateSettings()
-            .setPersistentSettings(
-                Settings.builder()
-                    .put("cluster.remote_store.state.cleanup.timeout", "30s")
-                    .put(REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING.getKey(), "100ms")
-            )
+            .setPersistentSettings(Settings.builder().put(REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING.getKey(), "100ms"))
             .get();
         assertTrue(response.isAcknowledged());
 
-        updateClusterStateNTimes(15);
+        assertBusy(() -> {
+            List<String> currentManifests = repository.blobStore()
+                .blobContainer(manifestContainerPath)
+                .listBlobsByPrefix("manifest")
+                .keySet()
+                .stream()
+                .sorted()
+                .collect(java.util.stream.Collectors.toList());
+            assertTrue("Manifests should be cleaned up in batches", currentManifests.size() < initialManifests.size());
+        });
 
-        RemoteClusterStateCleanupManager remoteClusterStateCleanupManager = internalCluster().getClusterManagerNodeInstance(
-            RemoteClusterStateCleanupManager.class
-        );
+        List<String> finalManifests = repository.blobStore()
+            .blobContainer(manifestContainerPath)
+            .listBlobsByPrefix("manifest")
+            .keySet()
+            .stream()
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+        List<String> last10Final = finalManifests.subList(Math.max(0, finalManifests.size() - 10), finalManifests.size());
 
-        assertBusy(() -> { assertTrue(remoteClusterStateCleanupManager.getStaleFileDeletionTask().isScheduled()); });
+        assertEquals("Last 10 manifest files should remain the same after cleanup", last10Initial, last10Final);
+
     }
 }

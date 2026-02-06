@@ -167,6 +167,11 @@ public class RemoteClusterStateCleanupManager implements Closeable {
         // After updating the interval, we need to close the current task and create a new one which will run with updated interval
         if (staleFileDeletionTask != null && !staleFileDeletionTask.getInterval().equals(updatedInterval)) {
             staleFileDeletionTask.setInterval(updatedInterval);
+            if (staleFileDeletionTask.isScheduled() == false) {
+                // When the cleanup is disabled, we do not update or reschedule it back when we update the interval
+                // hence rescheduling it manually.
+                staleFileDeletionTask.rescheduleIfNecessary();
+            }
         }
     }
 
