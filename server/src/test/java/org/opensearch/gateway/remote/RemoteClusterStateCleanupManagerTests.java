@@ -755,6 +755,36 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
         assertFalse(remoteClusterStateCleanupManager.getStaleFileDeletionTask().isClosed());
     }
 
+    public void testUpdateCleanupIntervalReschedulesWhenTaskNotScheduled() {
+        remoteClusterStateCleanupManager.start();
+
+        TimeValue disabledInterval = TimeValue.MINUS_ONE;
+        Settings disableSettings = Settings.builder().put("cluster.remote_store.state.cleanup_interval", disabledInterval).build();
+        clusterSettings.applySettings(disableSettings);
+
+        assertFalse(remoteClusterStateCleanupManager.getStaleFileDeletionTask().isScheduled());
+
+        TimeValue enabledInterval = TimeValue.timeValueMinutes(10);
+        Settings enableSettings = Settings.builder().put("cluster.remote_store.state.cleanup_interval", enabledInterval).build();
+        clusterSettings.applySettings(enableSettings);
+
+        assertTrue(remoteClusterStateCleanupManager.getStaleFileDeletionTask().isScheduled());
+        assertEquals(enabledInterval, remoteClusterStateCleanupManager.getStaleFileDeletionTask().getInterval());
+    }
+
+    public void testUpdateCleanupIntervalDoesNotRescheduleWhenTaskScheduled() {
+        remoteClusterStateCleanupManager.start();
+
+        assertTrue(remoteClusterStateCleanupManager.getStaleFileDeletionTask().isScheduled());
+
+        TimeValue newInterval = TimeValue.timeValueMinutes(10);
+        Settings newSettings = Settings.builder().put("cluster.remote_store.state.cleanup_interval", newInterval).build();
+        clusterSettings.applySettings(newSettings);
+
+        assertTrue(remoteClusterStateCleanupManager.getStaleFileDeletionTask().isScheduled());
+        assertEquals(newInterval, remoteClusterStateCleanupManager.getStaleFileDeletionTask().getInterval());
+    }
+
     public void testRemoteCleanupSkipsOnOnlyElectedClusterManager() {
         DiscoveryNodes nodes = mock(DiscoveryNodes.class);
         when(nodes.isLocalNodeElectedClusterManager()).thenReturn(false);
@@ -1171,12 +1201,25 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
             anyString(),
             anyString(),
             eq(batch2.subList(0, manifestsToRetain)),
-            staleCaptor.capture()
+            eq(batch2.subList(manifestsToRetain, batch2.size()))
         );
-        List<List<BlobMetadata>> staleInvocations = staleCaptor.getAllValues();
-        assertTrue(
-            "Second invocation should have manifest-91.dat in stale list",
-            staleInvocations.get(0).stream().anyMatch(blob -> "manifest-91.dat".equals(blob.name()))
+    }
+
+    public void testDeleteClusterMetadataIllegalStateException() throws IOException {
+        String clusterName = "test-cluster";
+        String clusterUUID = "test-uuid";
+        List<BlobMetadata> activeBlobs = Arrays.asList(new PlainBlobMetadata("manifest1.dat", 1L));
+        List<BlobMetadata> staleBlobs = Arrays.asList(new PlainBlobMetadata("manifest2.dat", 1L));
+
+        when(remoteManifestManager.fetchRemoteClusterMetadataManifest(eq(clusterName), eq(clusterUUID), any())).thenThrow(
+            new IllegalStateException("test illegal state")
         );
+
+        remoteClusterStateCleanupManager.start();
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class, () -> {
+            remoteClusterStateCleanupManager.deleteClusterMetadata(clusterName, clusterUUID, activeBlobs, staleBlobs);
+        });
+        assertEquals("test illegal state", thrown.getMessage());
     }
 }
