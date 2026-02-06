@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -503,7 +504,7 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                         cleanupBatchSize
                     );
 
-                    if (batchManifests.size() > manifestsToRetain) {
+                    if (Objects.nonNull(batchManifests) && batchManifests.size() > manifestsToRetain) {
                         List<BlobMetadata> manifestsToDeletes = batchManifests.subList(manifestsToRetain, batchManifests.size());
                         logger.debug("[Batch {}] Deleting [{}] stale manifests", batchesProcessed, manifestsToDeletes.size());
 
