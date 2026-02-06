@@ -216,7 +216,8 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                     );
                     lastCleanupAttemptStateVersion = cleanUpAttemptStateVersion;
                 } catch (RemoteStateCleanupFailedException e) {
-                    logger.error("Failed to clean up stale remote cluster state files for cluster [{}] with uuid [{}]",
+                    logger.error(
+                        "Failed to clean up stale remote cluster state files for cluster [{}] with uuid [{}]",
                         currentAppliedState.getClusterName().value(),
                         currentAppliedState.metadata().clusterUUID()
                     );
