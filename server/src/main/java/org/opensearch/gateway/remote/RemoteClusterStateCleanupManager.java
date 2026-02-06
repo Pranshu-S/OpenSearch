@@ -208,12 +208,19 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                     currentAppliedState.metadata().clusterUUID(),
                     cleanUpAttemptStateVersion - lastCleanupAttemptStateVersion
                 );
-                this.deleteStaleClusterMetadata(
-                    currentAppliedState.getClusterName().value(),
-                    currentAppliedState.metadata().clusterUUID(),
-                    RETAINED_MANIFESTS
-                );
-                lastCleanupAttemptStateVersion = cleanUpAttemptStateVersion;
+                try {
+                    this.deleteStaleClusterMetadata(
+                        currentAppliedState.getClusterName().value(),
+                        currentAppliedState.metadata().clusterUUID(),
+                        RETAINED_MANIFESTS
+                    );
+                    lastCleanupAttemptStateVersion = cleanUpAttemptStateVersion;
+                } catch (RemoteStateCleanupFailedException e) {
+                    logger.error("Failed to clean up stale remote cluster state files for cluster [{}] with uuid [{}]",
+                        currentAppliedState.getClusterName().value(),
+                        currentAppliedState.metadata().clusterUUID()
+                    );
+                }
             } else {
                 logger.debug(
                     "Skipping cleanup of stale remote state files for cluster [{}] with uuid [{}]. Last clean was done before {} updates, which is less than threshold {}",
@@ -245,7 +252,7 @@ public class RemoteClusterStateCleanupManager implements Closeable {
         String clusterUUID,
         List<BlobMetadata> activeManifestBlobMetadata,
         List<BlobMetadata> staleManifestBlobMetadata
-    ) {
+    ) throws IOException {
         try {
             Set<String> filesToKeep = new HashSet<>();
             Set<String> staleManifestPaths = new HashSet<>();
@@ -418,6 +425,8 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                     e
                 );
                 remoteStateStats.indexRoutingFilesCleanupAttemptFailed();
+                // throw exception as we do not want to fail repeatedly on all batches
+                throw e;
             }
 
             try {
@@ -428,6 +437,8 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                     e
                 );
                 remoteStateStats.indicesRoutingDiffFileCleanupAttemptFailed();
+                // throw exception as we do not want to fail repeatedly on all batches
+                throw e;
             }
 
             // Delete Manifests in the very end to avoid dangling routing files in-case deletion of stale index routing
@@ -436,12 +447,18 @@ public class RemoteClusterStateCleanupManager implements Closeable {
 
         } catch (IllegalStateException e) {
             logger.error("Error while fetching Remote Cluster Metadata manifests", e);
+            // throw exception as we do not want to fail repeatedly on all batches
+            throw e;
         } catch (IOException e) {
             logger.error("Error while deleting stale Remote Cluster Metadata files", e);
             remoteStateStats.cleanUpAttemptFailed();
+            // throw exception as we do not want to fail repeatedly on all batches
+            throw e;
         } catch (Exception e) {
             logger.error("Unexpected error while deleting stale Remote Cluster Metadata files", e);
             remoteStateStats.cleanUpAttemptFailed();
+            // throw exception as we do not want to fail repeatedly on all batches
+            throw e;
         }
     }
 
@@ -502,6 +519,14 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                 logger.error(
                     "Exception occurred while deleting Remote Cluster Metadata for clusterUUIDs [{}]. Exception: {}",
                     clusterUUID,
+                    e
+                );
+                throw new RemoteStateCleanupFailedException(
+                    new ParameterizedMessage(
+                        "Exception occurred while deleting Remote Cluster Metadata for clusterUUIDs [{}]. Exception: {}",
+                        clusterUUID,
+                        e
+                    ),
                     e
                 );
             } finally {
