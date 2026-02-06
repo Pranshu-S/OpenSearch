@@ -84,6 +84,7 @@ import static org.opensearch.node.remotestore.RemoteStoreNodeAttribute.REMOTE_ST
 import static org.opensearch.node.remotestore.RemoteStoreNodeAttribute.REMOTE_STORE_ROUTING_TABLE_REPOSITORY_NAME_ATTRIBUTE_KEY;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -720,8 +721,8 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
             .listBlobsByPrefixInSortedOrder(any(String.class), any(int.class), any(BlobContainer.BlobNameSortOrder.class));
 
         remoteClusterStateCleanupManager.start();
-        remoteClusterStateCleanupManager.deleteStaleClusterMetadata("cluster-name", "cluster-uuid", RETAINED_MANIFESTS);
-        remoteClusterStateCleanupManager.deleteStaleClusterMetadata("cluster-name", "cluster-uuid", RETAINED_MANIFESTS);
+        remoteClusterStateCleanupManager.deleteStaleClusterMetadata("cluster-name", "cluster-uuid", RETAINED_MANIFESTS, 10);
+        remoteClusterStateCleanupManager.deleteStaleClusterMetadata("cluster-name", "cluster-uuid", RETAINED_MANIFESTS, 10);
 
         latch.countDown();
         assertBusy(() -> assertEquals(1, callCount.get()));
@@ -760,7 +761,8 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
         when(clusterState.nodes()).thenReturn(nodes);
         RemoteClusterStateCleanupManager cleanUpManager = spy(remoteClusterStateCleanupManager);
         AtomicInteger callCount = new AtomicInteger(0);
-        doAnswer(invocation -> callCount.incrementAndGet()).when(cleanUpManager).deleteStaleClusterMetadata(any(), any(), anyInt());
+        doAnswer(invocation -> callCount.incrementAndGet()).when(cleanUpManager)
+            .deleteStaleClusterMetadata(any(), any(), anyInt(), anyLong());
         cleanUpManager.cleanUpStaleFiles();
         assertEquals(0, callCount.get());
 
@@ -780,9 +782,10 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
 
         RemoteClusterStateCleanupManager cleanUpManager = spy(remoteClusterStateCleanupManager);
         AtomicInteger callCount = new AtomicInteger(0);
-        doAnswer(invocation -> callCount.incrementAndGet()).when(cleanUpManager).deleteStaleClusterMetadata(any(), any(), anyInt());
+        doAnswer(invocation -> callCount.incrementAndGet()).when(cleanUpManager)
+            .deleteStaleClusterMetadata(any(), any(), anyInt(), anyLong());
 
-        remoteClusterStateCleanupManager.cleanUpStaleFiles();
+        cleanUpManager.cleanUpStaleFiles();
         assertEquals(0, callCount.get());
     }
 
@@ -796,7 +799,8 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
 
         RemoteClusterStateCleanupManager cleanUpManager = spy(remoteClusterStateCleanupManager);
         AtomicInteger callCount = new AtomicInteger(0);
-        doAnswer(invocation -> callCount.incrementAndGet()).when(cleanUpManager).deleteStaleClusterMetadata(any(), any(), anyInt());
+        doAnswer(invocation -> callCount.incrementAndGet()).when(cleanUpManager)
+            .deleteStaleClusterMetadata(any(), any(), anyInt(), anyLong());
 
         // using spied cleanup manager so that stubbed deleteStaleClusterMetadata is called
         cleanUpManager.cleanUpStaleFiles();
@@ -935,7 +939,7 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
         doAnswer(invocation -> mockTransferService).when(cleanUpManager).getBlobStoreTransferService();
 
         cleanUpManager.start();
-        cleanUpManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain);
+        cleanUpManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain, 10);
 
         assertTrue(latch.await(5, TimeUnit.SECONDS));
 
@@ -988,7 +992,7 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
         doAnswer(invocation -> mockTransferService).when(cleanUpManager).getBlobStoreTransferService();
 
         cleanUpManager.start();
-        cleanUpManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain);
+        cleanUpManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain, 10);
 
         assertTrue(latch.await(5, TimeUnit.SECONDS));
 
@@ -1040,7 +1044,7 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
 
         threadPool.executor(ThreadPool.Names.REMOTE_PURGE).execute(() -> {
             try {
-                cleanUpManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain);
+                cleanUpManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain, 10);
             } finally {
                 completionLatch.countDown();
             }
@@ -1089,7 +1093,7 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
         doAnswer(invocation -> mockTransferService).when(cleanUpManager).getBlobStoreTransferService();
 
         cleanUpManager.start();
-        cleanUpManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain);
+        cleanUpManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain, 10);
 
         assertTrue(latch.await(5, TimeUnit.SECONDS));
 
@@ -1153,7 +1157,7 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
         doNothing().when(cleanUpManager).deleteClusterMetadata(anyString(), anyString(), any(), any());
 
         cleanUpManager.start();
-        cleanUpManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain);
+        cleanUpManager.deleteStaleClusterMetadata(clusterName, clusterUUID, manifestsToRetain, 20);
 
         ArgumentCaptor<List<BlobMetadata>> staleCaptor = ArgumentCaptor.forClass(List.class);
         verify(cleanUpManager, times(1)).deleteClusterMetadata(
@@ -1171,7 +1175,7 @@ public class RemoteClusterStateCleanupManagerTests extends OpenSearchTestCase {
         );
         List<List<BlobMetadata>> staleInvocations = staleCaptor.getAllValues();
         assertTrue(
-            "Second invocation should have manifest-90 in stale list",
+            "Second invocation should have manifest-91.dat in stale list",
             staleInvocations.get(0).stream().anyMatch(blob -> "manifest-91.dat".equals(blob.name()))
         );
     }

@@ -47,7 +47,6 @@ public class S3BlobContainerTimeoutTests extends OpenSearchTestCase {
         }).when(s3BlobContainer).deleteBlobsAsyncIgnoringIfNotExists(eq(blobNames), any());
 
         doAnswer(invocation -> {
-            PlainActionFuture<Void> future = invocation.getArgument(0);
             TimeValue passedTimeout = invocation.getArgument(1);
             assertEquals(timeout, passedTimeout);
             return null;
@@ -82,7 +81,6 @@ public class S3BlobContainerTimeoutTests extends OpenSearchTestCase {
         }).when(s3BlobContainer).deleteBlobsAsyncIgnoringIfNotExists(eq(blobNames), any());
 
         doAnswer(invocation -> {
-            PlainActionFuture<Void> future = invocation.getArgument(0);
             TimeValue passedTimeout = invocation.getArgument(1);
             assertEquals(TimeValue.timeValueSeconds(30), passedTimeout);
             return null;

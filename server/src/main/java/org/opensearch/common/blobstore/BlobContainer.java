@@ -287,6 +287,7 @@ public interface BlobContainer {
      * when one or multiple of the given blobs don't exist and simply ignore this case.
      *
      * @param   blobNames  The names of the blob to delete.
+     * @param   timeout    The timeout for the delete operation.
      * @throws  IOException if a subset of blob exists but could not be deleted.
      */
     default void deleteBlobsIgnoringIfNotExists(List<String> blobNames, TimeValue timeout) throws IOException {

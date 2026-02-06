@@ -452,7 +452,7 @@ class S3BlobContainer extends AbstractBlobContainer implements AsyncMultiStreamB
             if (timeout.equals(TimeValue.MINUS_ONE)) {
                 return future.get();
             } else {
-                return future.get(timeout.seconds(), TimeUnit.SECONDS);
+                return future.get(timeout.millis(), TimeUnit.MILLISECONDS);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

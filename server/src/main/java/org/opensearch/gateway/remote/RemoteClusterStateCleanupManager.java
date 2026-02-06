@@ -214,20 +214,12 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                     currentAppliedState.metadata().clusterUUID(),
                     cleanUpAttemptStateVersion - lastCleanupAttemptStateVersion
                 );
-                try {
-                    this.deleteStaleClusterMetadata(
-                        currentAppliedState.getClusterName().value(),
-                        currentAppliedState.metadata().clusterUUID(),
-                        RETAINED_MANIFESTS
-                    );
-                    lastCleanupAttemptStateVersion = cleanUpAttemptStateVersion;
-                } catch (RemoteStateCleanupFailedException e) {
-                    logger.error(
-                        "Failed to clean up stale remote cluster state files for cluster [{}] with uuid [{}]",
-                        currentAppliedState.getClusterName().value(),
-                        currentAppliedState.metadata().clusterUUID()
-                    );
-                }
+                this.deleteStaleClusterMetadata(
+                    currentAppliedState.getClusterName().value(),
+                    currentAppliedState.metadata().clusterUUID(),
+                    RETAINED_MANIFESTS,
+                    cleanUpAttemptStateVersion
+                );
             } else {
                 logger.debug(
                     "Skipping cleanup of stale remote state files for cluster [{}] with uuid [{}]. Last clean was done before {} updates, which is less than threshold {}",
@@ -475,9 +467,10 @@ public class RemoteClusterStateCleanupManager implements Closeable {
      * @param clusterName name of the cluster
      * @param clusterUUID uuid of cluster state to refer to in remote
      * @param manifestsToRetain no of latest manifest files to keep in remote
+     * @param cleanUpAttemptStateVersion the state version for this cleanup attempt
      */
     // package private for testing
-    void deleteStaleClusterMetadata(String clusterName, String clusterUUID, int manifestsToRetain) {
+    void deleteStaleClusterMetadata(String clusterName, String clusterUUID, int manifestsToRetain, long cleanUpAttemptStateVersion) {
         if (deleteStaleMetadataRunning.compareAndSet(false, true) == false) {
             logger.info("Delete stale cluster metadata task is already in progress.");
             return;
@@ -522,18 +515,13 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                 if (batchesProcessed == cleanupMaxBatches) {
                     logger.warn("Exhausted batch limit for deleting entities. Attempted [{}] batches", cleanupMaxBatches);
                 }
+
+                // Update version only after successful completion
+                lastCleanupAttemptStateVersion = cleanUpAttemptStateVersion;
             } catch (Exception e) {
                 logger.error(
                     "Exception occurred while deleting Remote Cluster Metadata for clusterUUIDs [{}]. Exception: {}",
                     clusterUUID,
-                    e
-                );
-                throw new RemoteStateCleanupFailedException(
-                    new ParameterizedMessage(
-                        "Exception occurred while deleting Remote Cluster Metadata for clusterUUIDs [{}]. Exception: {}",
-                        clusterUUID,
-                        e
-                    ),
                     e
                 );
             } finally {

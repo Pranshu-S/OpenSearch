@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.CLUSTER_STATE_CLEANUP_INTERVAL_DEFAULT;
 import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING;
@@ -327,7 +328,7 @@ public class RemoteClusterStateCleanupManagerIT extends RemoteStoreBaseIntegTest
             .keySet()
             .stream()
             .sorted()
-            .collect(java.util.stream.Collectors.toList());
+            .collect(Collectors.toList());
         List<String> last10Initial = initialManifests.subList(Math.max(0, initialManifests.size() - 10), initialManifests.size());
 
         response = client().admin()
@@ -344,7 +345,7 @@ public class RemoteClusterStateCleanupManagerIT extends RemoteStoreBaseIntegTest
                 .keySet()
                 .stream()
                 .sorted()
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
             assertTrue("Manifests should be cleaned up in batches", currentManifests.size() < initialManifests.size());
         });
 
@@ -354,7 +355,7 @@ public class RemoteClusterStateCleanupManagerIT extends RemoteStoreBaseIntegTest
             .keySet()
             .stream()
             .sorted()
-            .collect(java.util.stream.Collectors.toList());
+            .collect(Collectors.toList());
         List<String> last10Final = finalManifests.subList(Math.max(0, finalManifests.size() - 10), finalManifests.size());
 
         assertEquals("Last 10 manifest files should remain the same after cleanup", last10Initial, last10Final);
