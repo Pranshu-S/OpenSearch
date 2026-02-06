@@ -290,7 +290,8 @@ public interface BlobContainer {
      * @throws  IOException if a subset of blob exists but could not be deleted.
      */
     default void deleteBlobsIgnoringIfNotExists(List<String> blobNames, TimeValue timeout) throws IOException {
-        throw new UnsupportedOperationException("deleteBlobsIgnoringIfNotExists with timeout is not supported");
+        LogManager.getLogger(this.getClass()).warn("No implementation exists for using timeout, skipping timeout input");
+        deleteBlobsIgnoringIfNotExists(blobNames);
     }
 
     /**

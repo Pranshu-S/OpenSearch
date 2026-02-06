@@ -308,8 +308,8 @@ public class RemoteClusterStateCleanupManagerIT extends RemoteStoreBaseIntegTest
             .prepareUpdateSettings()
             .setPersistentSettings(
                 Settings.builder()
-                    .put("cluster.remote_store.state.cleanup_batch_size", 25)
-                    .put("cluster.remote_store.state.cleanup_max_batches", 3)
+                    .put("cluster.remote_store.state.cleanup.batch_size", 25)
+                    .put("cluster.remote_store.state.cleanup.max_batches", 3)
                     .put(REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING.getKey(), "100ms")
             )
             .get();
@@ -342,7 +342,7 @@ public class RemoteClusterStateCleanupManagerIT extends RemoteStoreBaseIntegTest
             .prepareUpdateSettings()
             .setPersistentSettings(
                 Settings.builder()
-                    .put("cluster.remote_store.state.cleanup_timeout", "30s")
+                    .put("cluster.remote_store.state.cleanup.timeout", "30s")
                     .put(REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING.getKey(), "100ms")
             )
             .get();

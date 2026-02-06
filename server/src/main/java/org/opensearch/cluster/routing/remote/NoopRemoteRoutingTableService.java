@@ -16,6 +16,7 @@ import org.opensearch.cluster.routing.RoutingTable;
 import org.opensearch.cluster.routing.RoutingTableIncrementalDiff;
 import org.opensearch.cluster.routing.StringKeyDiffProvider;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.gateway.remote.ClusterMetadataManifest;
 
 import java.io.IOException;
@@ -118,6 +119,16 @@ public class NoopRemoteRoutingTableService extends AbstractLifecycleComponent im
     }
 
     public void deleteStaleIndexRoutingDiffPaths(List<String> stalePaths) throws IOException {
+        // noop
+    }
+
+    @Override
+    public void deleteStaleIndexRoutingPaths(List<String> stalePaths, TimeValue timeout) throws IOException {
+        // noop
+    }
+
+    @Override
+    public void deleteStaleIndexRoutingDiffPaths(List<String> stalePaths, TimeValue timeout) throws IOException {
         // noop
     }
 }
