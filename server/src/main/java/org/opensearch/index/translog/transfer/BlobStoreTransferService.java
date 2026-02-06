@@ -25,6 +25,7 @@ import org.opensearch.common.blobstore.stream.write.WritePriority;
 import org.opensearch.common.blobstore.transfer.RemoteTransferContainer;
 import org.opensearch.common.blobstore.transfer.stream.OffsetRangeIndexInputStream;
 import org.opensearch.common.lucene.store.ByteArrayIndexInput;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.index.store.exception.ChecksumCombinationException;
 import org.opensearch.index.translog.transfer.FileSnapshot.TransferFileSnapshot;
@@ -282,6 +283,11 @@ public class BlobStoreTransferService implements TransferService {
     @Override
     public void deleteBlobs(Iterable<String> path, List<String> fileNames) throws IOException {
         blobStore.blobContainer((BlobPath) path).deleteBlobsIgnoringIfNotExists(fileNames);
+    }
+
+    @Override
+    public void deleteBlobs(Iterable<String> path, List<String> fileNames, TimeValue timeout) throws IOException {
+        blobStore.blobContainer((BlobPath) path).deleteBlobsIgnoringIfNotExists(fileNames, timeout);
     }
 
     @Override

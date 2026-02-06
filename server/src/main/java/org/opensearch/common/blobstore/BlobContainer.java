@@ -36,6 +36,7 @@ import org.apache.logging.log4j.LogManager;
 import org.opensearch.cluster.metadata.CryptoMetadata;
 import org.opensearch.common.Nullable;
 import org.opensearch.common.annotation.ExperimentalApi;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
 
 import java.io.IOException;
@@ -280,6 +281,19 @@ public interface BlobContainer {
      * @throws  IOException if a subset of blob exists but could not be deleted.
      */
     void deleteBlobsIgnoringIfNotExists(List<String> blobNames) throws IOException;
+
+    /**
+     * Deletes the blobs with given names. This method will not throw an exception
+     * when one or multiple of the given blobs don't exist and simply ignore this case.
+     *
+     * @param   blobNames  The names of the blob to delete.
+     * @param   timeout    The timeout for the delete operation.
+     * @throws  IOException if a subset of blob exists but could not be deleted.
+     */
+    default void deleteBlobsIgnoringIfNotExists(List<String> blobNames, TimeValue timeout) throws IOException {
+        LogManager.getLogger(this.getClass()).warn("No implementation exists for using timeout, skipping timeout input");
+        deleteBlobsIgnoringIfNotExists(blobNames);
+    }
 
     /**
      * Lists all blobs in the container.

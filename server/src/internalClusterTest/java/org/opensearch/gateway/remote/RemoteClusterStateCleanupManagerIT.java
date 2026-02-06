@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.CLUSTER_STATE_CLEANUP_INTERVAL_DEFAULT;
 import static org.opensearch.gateway.remote.RemoteClusterStateCleanupManager.REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING;
@@ -293,5 +294,71 @@ public class RemoteClusterStateCleanupManagerIT extends RemoteStoreBaseIntegTest
             RemoteStorePathStrategy.PathInput.builder().basePath(baseMetadataPath.add(INDEX_ROUTING_TABLE)).indexUUID(indexUUID).build(),
             RemoteStoreEnums.PathHashAlgorithm.FNV_1A_BASE64
         );
+    }
+
+    public void testRemoteCleanupMultipleBatchDeletion() throws Exception {
+        int shardCount = randomIntBetween(1, 2);
+        int replicaCount = 1;
+        int dataNodeCount = shardCount * (replicaCount + 1);
+        int clusterManagerNodeCount = 1;
+
+        initialTestSetup(shardCount, replicaCount, dataNodeCount, clusterManagerNodeCount);
+
+        ClusterUpdateSettingsResponse response = client().admin()
+            .cluster()
+            .prepareUpdateSettings()
+            .setPersistentSettings(
+                Settings.builder()
+                    .put("cluster.remote_store.state.cleanup.batch_size", 25)
+                    .put("cluster.remote_store.state.cleanup.max_batches", 3)
+                    .put(REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING.getKey(), "-1") // Disable cleanup
+            )
+            .get();
+        assertTrue(response.isAcknowledged());
+
+        updateClusterStateNTimes(50);
+
+        RepositoriesService repositoriesService = internalCluster().getClusterManagerNodeInstance(RepositoriesService.class);
+        BlobStoreRepository repository = (BlobStoreRepository) repositoriesService.repository(REPOSITORY_NAME);
+        BlobPath manifestContainerPath = getBaseMetadataPath(repository).add("manifest");
+
+        List<String> initialManifests = repository.blobStore()
+            .blobContainer(manifestContainerPath)
+            .listBlobsByPrefix("manifest")
+            .keySet()
+            .stream()
+            .sorted()
+            .collect(Collectors.toList());
+        List<String> last10Initial = initialManifests.subList(Math.max(0, initialManifests.size() - 10), initialManifests.size());
+
+        response = client().admin()
+            .cluster()
+            .prepareUpdateSettings()
+            .setPersistentSettings(Settings.builder().put(REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING.getKey(), "100ms"))
+            .get();
+        assertTrue(response.isAcknowledged());
+
+        assertBusy(() -> {
+            List<String> currentManifests = repository.blobStore()
+                .blobContainer(manifestContainerPath)
+                .listBlobsByPrefix("manifest")
+                .keySet()
+                .stream()
+                .sorted()
+                .collect(Collectors.toList());
+            assertTrue("Manifests should be cleaned up in batches", currentManifests.size() < initialManifests.size());
+        });
+
+        List<String> finalManifests = repository.blobStore()
+            .blobContainer(manifestContainerPath)
+            .listBlobsByPrefix("manifest")
+            .keySet()
+            .stream()
+            .sorted()
+            .collect(Collectors.toList());
+        List<String> last10Final = finalManifests.subList(Math.max(0, finalManifests.size() - 10), finalManifests.size());
+
+        assertEquals("Last 10 manifest files should remain the same after cleanup", last10Initial, last10Final);
+
     }
 }

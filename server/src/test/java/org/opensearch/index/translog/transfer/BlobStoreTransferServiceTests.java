@@ -27,6 +27,7 @@ import org.opensearch.common.blobstore.transfer.RemoteTransferContainer;
 import org.opensearch.common.blobstore.transfer.stream.OffsetRangeInputStream;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.compress.NoneCompressor;
 import org.opensearch.core.index.Index;
@@ -51,6 +52,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -73,11 +75,25 @@ public class BlobStoreTransferServiceTests extends OpenSearchTestCase {
 
     private BlobStoreRepository repository;
 
+    private BlobStore mockBlobStore;
+
+    private BlobContainer mockBlobContainer;
+
+    private BlobStoreTransferService blobStoreTransferService;
+
     @Override
     public void setUp() throws Exception {
         super.setUp();
         repository = createRepository();
         threadPool = new TestThreadPool(getClass().getName());
+
+        mockBlobContainer = mock(BlobContainer.class);
+
+        mockBlobStore = mock(BlobStore.class);
+
+        when(mockBlobStore.blobContainer(any(BlobPath.class))).thenReturn(mockBlobContainer);
+
+        blobStoreTransferService = new BlobStoreTransferService(mockBlobStore, threadPool);
     }
 
     public void testUploadBlob() throws IOException {
@@ -298,6 +314,16 @@ public class BlobStoreTransferServiceTests extends OpenSearchTestCase {
         assertTrue(metadata.containsKey(CHECKPOINT_FILE_DATA_KEY));
         String expectedBase64String = Base64.getEncoder().encodeToString(inputData.getBytes(StandardCharsets.UTF_8));
         assertEquals(expectedBase64String, metadata.get(CHECKPOINT_FILE_DATA_KEY));
+    }
+
+    public void testDeleteBlobsWithTimeout() throws IOException {
+        BlobPath path = BlobPath.cleanPath().add("test");
+        List<String> fileNames = Arrays.asList("file1.dat", "file2.dat", "file3.dat");
+        TimeValue timeout = TimeValue.timeValueSeconds(45);
+
+        blobStoreTransferService.deleteBlobs(path, fileNames, timeout);
+
+        verify(mockBlobContainer).deleteBlobsIgnoringIfNotExists(fileNames, timeout);
     }
 
     private static class TestClass implements Serializable {

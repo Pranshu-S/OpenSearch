@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -48,8 +49,15 @@ public class RemoteClusterStateCleanupManager implements Closeable {
 
     public static final int RETAINED_MANIFESTS = 10;
     public static final int SKIP_CLEANUP_STATE_CHANGES = 10;
+    public static final int MANIFEST_CLEANUP_BATCH_SIZE_DEFAULT = 1000;
+    public static final int MANIFEST_CLEANUP_MAX_BATCHES_DEFAULT = 100;
     public static final TimeValue CLUSTER_STATE_CLEANUP_INTERVAL_DEFAULT = TimeValue.timeValueMinutes(5);
     public static final TimeValue CLUSTER_STATE_CLEANUP_INTERVAL_MINIMUM = TimeValue.MINUS_ONE;
+    public static final TimeValue CLUSTER_STATE_CLEANUP_TIMEOUT_DEFAULT = TimeValue.MINUS_ONE;
+
+    public static final String REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING_NAME = "cluster.remote_store.state.cleanup.batch_size";
+    public static final String REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING_NAME = "cluster.remote_store.state.cleanup.timeout";
+    public static final String REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING_NAME = "cluster.remote_store.state.cleanup.max_batches";
 
     /**
      * Setting to specify the interval to do run stale file cleanup job
@@ -62,11 +70,47 @@ public class RemoteClusterStateCleanupManager implements Closeable {
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
+
+    /**
+     * Setting to specify the batch size for manifest cleanup operations
+     */
+    public static final Setting<Integer> REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING = Setting.intSetting(
+        REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING_NAME,
+        MANIFEST_CLEANUP_BATCH_SIZE_DEFAULT,
+        RETAINED_MANIFESTS + SKIP_CLEANUP_STATE_CHANGES,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
+     * Setting to specify the timeout for deletion operations
+     */
+    public static final Setting<TimeValue> REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING = Setting.timeSetting(
+        REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING_NAME,
+        CLUSTER_STATE_CLEANUP_TIMEOUT_DEFAULT,
+        TimeValue.MINUS_ONE,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
+     * Setting to specify the maximum number of batches to process during cleanup
+     */
+    public static final Setting<Integer> REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING = Setting.intSetting(
+        REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING_NAME,
+        MANIFEST_CLEANUP_MAX_BATCHES_DEFAULT,
+        1,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
     private static final Logger logger = LogManager.getLogger(RemoteClusterStateCleanupManager.class);
     private final RemoteClusterStateService remoteClusterStateService;
     private final RemotePersistenceStats remoteStateStats;
     private BlobStoreTransferService blobStoreTransferService;
     private TimeValue staleFileCleanupInterval;
+    private int cleanupBatchSize;
+    private int cleanupMaxBatches;
+    private TimeValue cleanupTimeout;
     private final AtomicBoolean deleteStaleMetadataRunning = new AtomicBoolean(false);
     private volatile AsyncStaleFileDeletion staleFileDeletionTask;
     private long lastCleanupAttemptStateVersion;
@@ -85,10 +129,16 @@ public class RemoteClusterStateCleanupManager implements Closeable {
         ClusterSettings clusterSettings = clusterService.getClusterSettings();
         this.clusterApplierService = clusterService.getClusterApplierService();
         this.staleFileCleanupInterval = clusterSettings.get(REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING);
+        this.cleanupBatchSize = clusterSettings.get(REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING);
+        this.cleanupMaxBatches = clusterSettings.get(REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING);
+        this.cleanupTimeout = clusterSettings.get(REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING);
         this.threadpool = remoteClusterStateService.getThreadpool();
         // initialize with 0, a cleanup will be done when this node is elected master node and version is incremented more than threshold
         this.lastCleanupAttemptStateVersion = 0;
         clusterSettings.addSettingsUpdateConsumer(REMOTE_CLUSTER_STATE_CLEANUP_INTERVAL_SETTING, this::updateCleanupInterval);
+        clusterSettings.addSettingsUpdateConsumer(REMOTE_CLUSTER_STATE_CLEANUP_BATCH_SIZE_SETTING, this::updateCleanupBatchSize);
+        clusterSettings.addSettingsUpdateConsumer(REMOTE_CLUSTER_STATE_CLEANUP_MAX_BATCHES_SETTING, this::updateCleanupMaxBatches);
+        clusterSettings.addSettingsUpdateConsumer(REMOTE_CLUSTER_STATE_CLEANUP_TIMEOUT_SETTING, this::updateCleanupTimeout);
         this.remoteRoutingTableService = remoteRoutingTableService;
     }
 
@@ -104,7 +154,8 @@ public class RemoteClusterStateCleanupManager implements Closeable {
         }
     }
 
-    private BlobStoreTransferService getBlobStoreTransferService() {
+    // package private for testing
+    BlobStoreTransferService getBlobStoreTransferService() {
         if (blobStoreTransferService == null) {
             blobStoreTransferService = new BlobStoreTransferService(remoteClusterStateService.getBlobStore(), threadpool);
         }
@@ -117,7 +168,36 @@ public class RemoteClusterStateCleanupManager implements Closeable {
         // After updating the interval, we need to close the current task and create a new one which will run with updated interval
         if (staleFileDeletionTask != null && !staleFileDeletionTask.getInterval().equals(updatedInterval)) {
             staleFileDeletionTask.setInterval(updatedInterval);
+            if (staleFileDeletionTask.isScheduled() == false) {
+                // When the cleanup is disabled, we do not update or reschedule it back when we update the interval
+                // hence rescheduling it manually.
+                staleFileDeletionTask.rescheduleIfNecessary();
+            }
         }
+    }
+
+    private void rescheduleAsyncDeletionTask() {
+        if (staleFileDeletionTask != null) {
+            staleFileDeletionTask.rescheduleIfNecessary();
+        }
+    }
+
+    private void updateCleanupBatchSize(Integer updatedBatchSize) {
+        this.cleanupBatchSize = updatedBatchSize;
+        logger.info("updated remote state cleanup batch size to {}", updatedBatchSize);
+        rescheduleAsyncDeletionTask();
+    }
+
+    private void updateCleanupMaxBatches(Integer updatedMaxBatches) {
+        this.cleanupMaxBatches = updatedMaxBatches;
+        logger.info("updated remote state cleanup max batches to {}", updatedMaxBatches);
+        rescheduleAsyncDeletionTask();
+    }
+
+    private void updateCleanupTimeout(TimeValue updatedTimeout) {
+        this.cleanupTimeout = updatedTimeout;
+        logger.info("updated remote state cleanup timeout to {}", updatedTimeout);
+        rescheduleAsyncDeletionTask();
     }
 
     // visible for testing
@@ -137,9 +217,9 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                 this.deleteStaleClusterMetadata(
                     currentAppliedState.getClusterName().value(),
                     currentAppliedState.metadata().clusterUUID(),
-                    RETAINED_MANIFESTS
+                    RETAINED_MANIFESTS,
+                    cleanUpAttemptStateVersion
                 );
-                lastCleanupAttemptStateVersion = cleanUpAttemptStateVersion;
             } else {
                 logger.debug(
                     "Skipping cleanup of stale remote state files for cluster [{}] with uuid [{}]. Last clean was done before {} updates, which is less than threshold {}",
@@ -171,7 +251,7 @@ public class RemoteClusterStateCleanupManager implements Closeable {
         String clusterUUID,
         List<BlobMetadata> activeManifestBlobMetadata,
         List<BlobMetadata> staleManifestBlobMetadata
-    ) {
+    ) throws IOException {
         try {
             Set<String> filesToKeep = new HashSet<>();
             Set<String> staleManifestPaths = new HashSet<>();
@@ -260,7 +340,7 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                     clusterMetadataManifest.getIndicesRouting().forEach(uploadedIndicesRouting -> {
                         if (!filesToKeep.contains(uploadedIndicesRouting.getUploadedFilename())) {
                             staleIndexRoutingPaths.add(uploadedIndicesRouting.getUploadedFilename());
-                            logger.debug(
+                            logger.trace(
                                 () -> new ParameterizedMessage(
                                     "Indices routing paths in stale manifest: {}",
                                     uploadedIndicesRouting.getUploadedFilename()
@@ -273,7 +353,7 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                     && clusterMetadataManifest.getDiffManifest().getIndicesRoutingDiffPath() != null) {
                     if (!filesToKeep.contains(clusterMetadataManifest.getDiffManifest().getIndicesRoutingDiffPath())) {
                         staleIndexRoutingDiffPaths.add(clusterMetadataManifest.getDiffManifest().getIndicesRoutingDiffPath());
-                        logger.debug(
+                        logger.trace(
                             () -> new ParameterizedMessage(
                                 "Indices routing diff paths in stale manifest: {}",
                                 clusterMetadataManifest.getDiffManifest().getIndicesRoutingDiffPath()
@@ -320,36 +400,64 @@ public class RemoteClusterStateCleanupManager implements Closeable {
                 return;
             }
 
+            logger.debug(
+                "Processed [{}] manifests, Deleting [{}] stale Global Metadata files, "
+                    + "[{}] stale Index Metadata files, [{}] stale Ephemeral Metadata files, "
+                    + "[{}] stale Index Routing files and [{}] stale Index routing diff files",
+                staleManifestPaths.size(),
+                staleGlobalMetadataPaths.size(),
+                staleIndexMetadataPaths.size(),
+                staleEphemeralAttributePaths.size(),
+                staleIndexRoutingPaths.size(),
+                staleIndexRoutingDiffPaths.size()
+            );
+
             deleteStalePaths(new ArrayList<>(staleGlobalMetadataPaths));
             deleteStalePaths(new ArrayList<>(staleIndexMetadataPaths));
             deleteStalePaths(new ArrayList<>(staleEphemeralAttributePaths));
-            deleteStalePaths(new ArrayList<>(staleManifestPaths));
+
             try {
-                remoteRoutingTableService.deleteStaleIndexRoutingPaths(new ArrayList<>(staleIndexRoutingPaths));
+                remoteRoutingTableService.deleteStaleIndexRoutingPaths(new ArrayList<>(staleIndexRoutingPaths), cleanupTimeout);
             } catch (IOException e) {
                 logger.error(
                     () -> new ParameterizedMessage("Error while deleting stale index routing files {}", staleIndexRoutingPaths),
                     e
                 );
                 remoteStateStats.indexRoutingFilesCleanupAttemptFailed();
+                // throw exception as we do not want to fail repeatedly on all batches
+                throw e;
             }
+
             try {
-                remoteRoutingTableService.deleteStaleIndexRoutingDiffPaths(new ArrayList<>(staleIndexRoutingDiffPaths));
+                remoteRoutingTableService.deleteStaleIndexRoutingDiffPaths(new ArrayList<>(staleIndexRoutingDiffPaths), cleanupTimeout);
             } catch (IOException e) {
                 logger.error(
                     () -> new ParameterizedMessage("Error while deleting stale index routing diff files {}", staleIndexRoutingDiffPaths),
                     e
                 );
                 remoteStateStats.indicesRoutingDiffFileCleanupAttemptFailed();
+                // throw exception as we do not want to fail repeatedly on all batches
+                throw e;
             }
+
+            // Delete Manifests in the very end to avoid dangling routing files in-case deletion of stale index routing
+            // files after deleting manifests
+            deleteStalePaths(new ArrayList<>(staleManifestPaths));
+
         } catch (IllegalStateException e) {
             logger.error("Error while fetching Remote Cluster Metadata manifests", e);
+            // throw exception as we do not want to fail repeatedly on all batches
+            throw e;
         } catch (IOException e) {
             logger.error("Error while deleting stale Remote Cluster Metadata files", e);
             remoteStateStats.cleanUpAttemptFailed();
+            // throw exception as we do not want to fail repeatedly on all batches
+            throw e;
         } catch (Exception e) {
             logger.error("Unexpected error while deleting stale Remote Cluster Metadata files", e);
             remoteStateStats.cleanUpAttemptFailed();
+            // throw exception as we do not want to fail repeatedly on all batches
+            throw e;
         }
     }
 
@@ -359,49 +467,68 @@ public class RemoteClusterStateCleanupManager implements Closeable {
      * @param clusterName name of the cluster
      * @param clusterUUID uuid of cluster state to refer to in remote
      * @param manifestsToRetain no of latest manifest files to keep in remote
+     * @param cleanUpAttemptStateVersion the state version for this cleanup attempt
      */
     // package private for testing
-    void deleteStaleClusterMetadata(String clusterName, String clusterUUID, int manifestsToRetain) {
+    void deleteStaleClusterMetadata(String clusterName, String clusterUUID, int manifestsToRetain, long cleanUpAttemptStateVersion) {
         if (deleteStaleMetadataRunning.compareAndSet(false, true) == false) {
             logger.info("Delete stale cluster metadata task is already in progress.");
             return;
         }
-        try {
-            getBlobStoreTransferService().listAllInSortedOrderAsync(
-                ThreadPool.Names.REMOTE_PURGE,
-                remoteManifestManager.getManifestFolderPath(clusterName, clusterUUID),
-                MANIFEST,
-                Integer.MAX_VALUE,
-                new ActionListener<>() {
-                    @Override
-                    public void onResponse(List<BlobMetadata> blobMetadata) {
-                        if (blobMetadata.size() > manifestsToRetain) {
-                            deleteClusterMetadata(
-                                clusterName,
-                                clusterUUID,
-                                blobMetadata.subList(0, manifestsToRetain),
-                                blobMetadata.subList(manifestsToRetain, blobMetadata.size())
-                            );
-                        }
-                        deleteStaleMetadataRunning.set(false);
-                    }
 
-                    @Override
-                    public void onFailure(Exception e) {
-                        logger.error(
-                            new ParameterizedMessage(
-                                "Exception occurred while deleting Remote Cluster Metadata for clusterUUIDs {}",
-                                clusterUUID
-                            )
+        logger.info(
+            "Starting batched cleanup for cluster [{}] with batch size [{}] and retaining [{}] manifests. Maximum batches to be attempted will be [{}]",
+            clusterName,
+            cleanupBatchSize,
+            manifestsToRetain,
+            cleanupMaxBatches
+        );
+
+        threadpool.executor(ThreadPool.Names.REMOTE_PURGE).execute(() -> {
+            try {
+                int batchesProcessed = 0;
+
+                while (batchesProcessed < cleanupMaxBatches) {
+                    batchesProcessed++;
+
+                    List<BlobMetadata> batchManifests = getBlobStoreTransferService().listAllInSortedOrder(
+                        remoteManifestManager.getManifestFolderPath(clusterName, clusterUUID),
+                        MANIFEST,
+                        cleanupBatchSize
+                    );
+
+                    if (Objects.nonNull(batchManifests) && batchManifests.size() > manifestsToRetain) {
+                        List<BlobMetadata> manifestsToDeletes = batchManifests.subList(manifestsToRetain, batchManifests.size());
+                        logger.debug("[Batch {}] Deleting [{}] stale manifests", batchesProcessed, manifestsToDeletes.size());
+
+                        deleteClusterMetadata(clusterName, clusterUUID, batchManifests.subList(0, manifestsToRetain), manifestsToDeletes);
+                    } else {
+                        logger.debug(
+                            "Number of manifests [{}] are less than or equal to manifests to retain [{}]. Skipping deletion",
+                            batchManifests.size(),
+                            manifestsToRetain
                         );
-                        deleteStaleMetadataRunning.set(false);
+                        break;
                     }
                 }
-            );
-        } catch (Exception e) {
-            deleteStaleMetadataRunning.set(false);
-            throw e;
-        }
+
+                if (batchesProcessed == cleanupMaxBatches) {
+                    logger.warn("Exhausted batch limit for deleting entities. Attempted [{}] batches", cleanupMaxBatches);
+                }
+
+                // Update version only after successful completion
+                lastCleanupAttemptStateVersion = cleanUpAttemptStateVersion;
+            } catch (Exception e) {
+                logger.error(
+                    "Exception occurred while deleting Remote Cluster Metadata for clusterUUIDs [{}]. Exception: {}",
+                    clusterUUID,
+                    e
+                );
+            } finally {
+                deleteStaleMetadataRunning.set(false);
+                logger.debug("Released cleanup lock for cluster [{}]", clusterName);
+            }
+        });
     }
 
     /**
@@ -444,7 +571,7 @@ public class RemoteClusterStateCleanupManager implements Closeable {
     // package private for testing
     void deleteStalePaths(List<String> stalePaths) throws IOException {
         logger.debug(String.format(Locale.ROOT, "Deleting stale files from remote - %s", stalePaths));
-        getBlobStoreTransferService().deleteBlobs(BlobPath.cleanPath(), stalePaths);
+        getBlobStoreTransferService().deleteBlobs(BlobPath.cleanPath(), stalePaths, cleanupTimeout);
     }
 
     /**

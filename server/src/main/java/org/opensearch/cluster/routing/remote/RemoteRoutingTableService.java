@@ -15,6 +15,7 @@ import org.opensearch.cluster.routing.IndexRoutingTable;
 import org.opensearch.cluster.routing.RoutingTable;
 import org.opensearch.cluster.routing.StringKeyDiffProvider;
 import org.opensearch.common.lifecycle.LifecycleComponent;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.gateway.remote.ClusterMetadataManifest;
 
 import java.io.IOException;
@@ -75,5 +76,13 @@ public interface RemoteRoutingTableService extends LifecycleComponent {
     void deleteStaleIndexRoutingPaths(List<String> stalePaths) throws IOException;
 
     void deleteStaleIndexRoutingDiffPaths(List<String> stalePaths) throws IOException;
+
+    default void deleteStaleIndexRoutingPaths(List<String> stalePaths, TimeValue timeout) throws IOException {
+        throw new UnsupportedOperationException("deleteStaleIndexRoutingPaths with timeouts is not supported");
+    }
+
+    default void deleteStaleIndexRoutingDiffPaths(List<String> stalePaths, TimeValue timeout) throws IOException {
+        throw new UnsupportedOperationException("deleteStaleIndexRoutingDiffPaths with timeouts is not supported");
+    }
 
 }

@@ -28,6 +28,7 @@ import org.opensearch.common.blobstore.stream.write.WritePriority;
 import org.opensearch.common.compress.DeflateCompressor;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.TestCapturingListener;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.compress.Compressor;
@@ -834,5 +835,55 @@ public class RemoteRoutingTableServiceTests extends OpenSearchTestCase {
         );
         assertEquals("test exception", thrown.getMessage());
         verify(blobContainer).deleteBlobsIgnoringIfNotExists(stalePaths);
+    }
+
+    public void testDeleteStaleIndexRoutingPathsWithTimeValue() throws IOException {
+        doNothing().when(blobContainer).deleteBlobsIgnoringIfNotExists(any(), any(TimeValue.class));
+        when(blobStore.blobContainer(any())).thenReturn(blobContainer);
+        List<String> stalePaths = Arrays.asList("path1", "path2");
+        TimeValue timeValue = TimeValue.timeValueSeconds(30);
+        remoteRoutingTableService.doStart();
+        remoteRoutingTableService.deleteStaleIndexRoutingPaths(stalePaths, timeValue);
+        verify(blobContainer).deleteBlobsIgnoringIfNotExists(stalePaths, timeValue);
+    }
+
+    public void testDeleteStaleIndexRoutingPathsWithTimeValueThrowsIOException() throws IOException {
+        when(blobStore.blobContainer(any())).thenReturn(blobContainer);
+        List<String> stalePaths = Arrays.asList("path1", "path2");
+        TimeValue timeValue = TimeValue.timeValueSeconds(30);
+        doThrow(new IOException("test exception")).when(blobContainer)
+            .deleteBlobsIgnoringIfNotExists(Mockito.anyList(), any(TimeValue.class));
+
+        remoteRoutingTableService.doStart();
+        IOException thrown = assertThrows(IOException.class, () -> {
+            remoteRoutingTableService.deleteStaleIndexRoutingPaths(stalePaths, timeValue);
+        });
+        assertEquals("test exception", thrown.getMessage());
+        verify(blobContainer).deleteBlobsIgnoringIfNotExists(stalePaths, timeValue);
+    }
+
+    public void testDeleteStaleIndexRoutingDiffPathsWithTimeValue() throws IOException {
+        doNothing().when(blobContainer).deleteBlobsIgnoringIfNotExists(any(), any(TimeValue.class));
+        when(blobStore.blobContainer(any())).thenReturn(blobContainer);
+        List<String> stalePaths = Arrays.asList("path1", "path2");
+        TimeValue timeValue = TimeValue.timeValueSeconds(30);
+        remoteRoutingTableService.doStart();
+        remoteRoutingTableService.deleteStaleIndexRoutingDiffPaths(stalePaths, timeValue);
+        verify(blobContainer).deleteBlobsIgnoringIfNotExists(stalePaths, timeValue);
+    }
+
+    public void testDeleteStaleIndexRoutingDiffPathsWithTimeValueThrowsIOException() throws IOException {
+        when(blobStore.blobContainer(any())).thenReturn(blobContainer);
+        List<String> stalePaths = Arrays.asList("path1", "path2");
+        TimeValue timeValue = TimeValue.timeValueSeconds(30);
+        doThrow(new IOException("test exception")).when(blobContainer)
+            .deleteBlobsIgnoringIfNotExists(Mockito.anyList(), any(TimeValue.class));
+
+        remoteRoutingTableService.doStart();
+        IOException thrown = assertThrows(IOException.class, () -> {
+            remoteRoutingTableService.deleteStaleIndexRoutingDiffPaths(stalePaths, timeValue);
+        });
+        assertEquals("test exception", thrown.getMessage());
+        verify(blobContainer).deleteBlobsIgnoringIfNotExists(stalePaths, timeValue);
     }
 }
