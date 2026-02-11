@@ -13,7 +13,9 @@ import org.apache.logging.log4j.Logger;
 import org.opensearch.cluster.metadata.RepositoryMetadata;
 import org.opensearch.common.SetOnce;
 import org.opensearch.common.blobstore.BlobStore;
+import org.opensearch.common.blobstore.BlobContainerInterceptorRegistry;
 import org.opensearch.common.blobstore.EncryptedBlobStore;
+import org.opensearch.common.blobstore.InterceptingBlobStore;
 import org.opensearch.common.lifecycle.Lifecycle;
 import org.opensearch.repositories.RepositoryException;
 
@@ -28,14 +30,16 @@ public class BlobStoreProvider {
     protected final RepositoryMetadata metadata;
     protected final Object lock;
     protected final BlobStoreRepository repository;
+    private final BlobContainerInterceptorRegistry interceptorRegistry;
     private final SetOnce<BlobStore> blobStore = new SetOnce<>();
     private final SetOnce<BlobStore> serverSideEncryptedBlobStore = new SetOnce<>();
 
-    public BlobStoreProvider(BlobStoreRepository repository, RepositoryMetadata metadata, Lifecycle lifecycle, Object lock) {
+    public BlobStoreProvider(BlobStoreRepository repository, RepositoryMetadata metadata, Lifecycle lifecycle, Object lock, BlobContainerInterceptorRegistry interceptorRegistry) {
         this.lifecycle = lifecycle;
         this.metadata = metadata;
         this.lock = lock;
         this.repository = repository;
+        this.interceptorRegistry = interceptorRegistry;
     }
 
     protected BlobStore blobStore(boolean serverSideEncryptionEnabled) {
@@ -56,6 +60,10 @@ public class BlobStoreProvider {
                     store = initBlobStore();
                     if (!serverSideEncryption && metadata.cryptoMetadata() != null) {
                         store = new EncryptedBlobStore(store, metadata.cryptoMetadata());
+                    }
+                    // Wrap with chaos interceptors if enabled
+                    if (interceptorRegistry != null) {
+                        store = new InterceptingBlobStore(store, interceptorRegistry);
                     }
                     blobStore.set(store);
                 }

@@ -43,6 +43,7 @@ import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.common.Nullable;
 import org.opensearch.common.Priority;
 import org.opensearch.common.annotation.PublicApi;
+import org.opensearch.common.blobstore.BlobContainerInterceptorRegistry;
 import org.opensearch.common.lifecycle.LifecycleComponent;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.core.action.ActionListener;
@@ -672,4 +673,6 @@ public interface Repository extends LifecycleComponent {
      * Validate the repository metadata
      */
     default void validateMetadata(RepositoryMetadata repositoryMetadata) {}
+
+    default void registerInterceptors(BlobContainerInterceptorRegistry registry) {}
 }

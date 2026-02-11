@@ -70,11 +70,7 @@ import org.opensearch.common.Priority;
 import org.opensearch.common.Randomness;
 import org.opensearch.common.SetOnce;
 import org.opensearch.common.UUIDs;
-import org.opensearch.common.blobstore.BlobContainer;
-import org.opensearch.common.blobstore.BlobMetadata;
-import org.opensearch.common.blobstore.BlobPath;
-import org.opensearch.common.blobstore.BlobStore;
-import org.opensearch.common.blobstore.DeleteResult;
+import org.opensearch.common.blobstore.*;
 import org.opensearch.common.blobstore.fs.FsBlobContainer;
 import org.opensearch.common.blobstore.transfer.stream.OffsetRangeInputStream;
 import org.opensearch.common.blobstore.transfer.stream.RateLimitingOffsetRangeInputStream;
@@ -613,6 +609,8 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent imp
 
     private volatile boolean closed;
 
+    private volatile BlobContainerInterceptorRegistry blobContainerInterceptorRegistry;
+
     /**
      * Constructs new BlobStoreRepository
      * @param repositoryMetadata   The metadata for this repository including name and settings
@@ -1076,7 +1074,7 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent imp
             synchronized (lock) {
                 provider = this.blobStoreProvider.get();
                 if (provider == null) {
-                    provider = new BlobStoreProvider(this, metadata, lifecycle, lock);
+                    provider = new BlobStoreProvider(this, metadata, lifecycle, lock, blobContainerInterceptorRegistry);
                     this.blobStoreProvider.set(provider);
                 }
             }
@@ -4961,5 +4959,10 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent imp
         }
         Settings indexSettings = indexMetadata.getSettings();
         return CryptoMetadata.fromIndexSettings(indexSettings);
+    }
+
+    @Override
+    public void registerInterceptors(BlobContainerInterceptorRegistry registry) {
+        this.blobContainerInterceptorRegistry = registry;
     }
 }

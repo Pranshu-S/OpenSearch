@@ -58,6 +58,8 @@ import org.opensearch.cluster.node.DiscoveryNodeRole;
 import org.opensearch.cluster.service.ClusterManagerTaskThrottler;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.annotation.PublicApi;
+import org.opensearch.common.blobstore.BlobContainerInterceptor;
+import org.opensearch.common.blobstore.BlobContainerInterceptorRegistry;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
 import org.opensearch.common.regex.Regex;
 import org.opensearch.common.settings.Setting;
@@ -68,6 +70,7 @@ import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.common.Strings;
 import org.opensearch.node.remotestore.RemoteStorePinnedTimestampService;
+import org.opensearch.plugins.BlobContainerInterceptorPlugin;
 import org.opensearch.repositories.blobstore.MeteredBlobStoreRepository;
 import org.opensearch.snapshots.SnapshotsService;
 import org.opensearch.threadpool.ThreadPool;
@@ -117,6 +120,7 @@ public class RepositoriesService extends AbstractLifecycleComponent implements C
 
     private final Map<String, Repository.Factory> typesRegistry;
     private final Map<String, Repository.Factory> internalTypesRegistry;
+    private final BlobContainerInterceptorRegistry interceptorRegistry;
 
     private final ClusterService clusterService;
 
@@ -139,6 +143,18 @@ public class RepositoriesService extends AbstractLifecycleComponent implements C
         Map<String, Repository.Factory> internalTypesRegistry,
         ThreadPool threadPool
     ) {
+       this(settings, clusterService, transportService, typesRegistry, internalTypesRegistry, threadPool, Collections.emptyList());
+    }
+
+    public RepositoriesService(
+        Settings settings,
+        ClusterService clusterService,
+        TransportService transportService,
+        Map<String, Repository.Factory> typesRegistry,
+        Map<String, Repository.Factory> internalTypesRegistry,
+        ThreadPool threadPool,
+        List<BlobContainerInterceptorPlugin> interceptorPlugins
+    ) {
         this.settings = settings;
         this.typesRegistry = typesRegistry;
         this.internalTypesRegistry = internalTypesRegistry;
@@ -160,6 +176,15 @@ public class RepositoriesService extends AbstractLifecycleComponent implements C
         // Task is onboarded for throttling, it will get retried from associated TransportClusterManagerNodeAction.
         putRepositoryTaskKey = clusterService.registerClusterManagerTask(PUT_REPOSITORY, true);
         deleteRepositoryTaskKey = clusterService.registerClusterManagerTask(DELETE_REPOSITORY, true);
+
+        this.interceptorRegistry = new BlobContainerInterceptorRegistry();
+
+        // Register interceptors from plugins
+        for (BlobContainerInterceptorPlugin plugin : interceptorPlugins) {
+            for (BlobContainerInterceptor interceptor : plugin.getBlobContainerInterceptors()) {
+                this.interceptorRegistry.registerInterceptor(interceptor);
+            }
+        }
     }
 
     /**
@@ -661,6 +686,13 @@ public class RepositoriesService extends AbstractLifecycleComponent implements C
         }
     }
 
+    /**
+     * Gets the blob container interceptor registry
+     */
+    public BlobContainerInterceptorRegistry getInterceptorRegistry() {
+        return interceptorRegistry;
+    }
+
     /** Closes the given repository. */
     public void closeRepository(Repository repository) {
         logger.debug("closing repository [{}][{}]", repository.getMetadata().type(), repository.getMetadata().name());
@@ -687,6 +719,10 @@ public class RepositoriesService extends AbstractLifecycleComponent implements C
         try {
             repository = factory.create(repositoryMetadata, factories::get);
             repository.start();
+
+            if (Objects.nonNull(interceptorRegistry)) {
+                repository.registerInterceptors(interceptorRegistry);
+            }
             return repository;
         } catch (Exception e) {
             IOUtils.closeWhileHandlingException(repository);
