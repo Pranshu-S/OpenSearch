@@ -674,5 +674,5 @@ public interface Repository extends LifecycleComponent {
      */
     default void validateMetadata(RepositoryMetadata repositoryMetadata) {}
 
-    default void registerInterceptors(BlobContainerInterceptorRegistry registry) {}
+
 }

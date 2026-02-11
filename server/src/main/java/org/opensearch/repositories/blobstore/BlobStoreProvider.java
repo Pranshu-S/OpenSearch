@@ -34,6 +34,10 @@ public class BlobStoreProvider {
     private final SetOnce<BlobStore> blobStore = new SetOnce<>();
     private final SetOnce<BlobStore> serverSideEncryptedBlobStore = new SetOnce<>();
 
+    public BlobStoreProvider(BlobStoreRepository repository, RepositoryMetadata metadata, Lifecycle lifecycle, Object lock) {
+        this(repository, metadata, lifecycle, lock, null);
+    }
+
     public BlobStoreProvider(BlobStoreRepository repository, RepositoryMetadata metadata, Lifecycle lifecycle, Object lock, BlobContainerInterceptorRegistry interceptorRegistry) {
         this.lifecycle = lifecycle;
         this.metadata = metadata;

@@ -71,6 +71,7 @@ import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.common.Strings;
 import org.opensearch.node.remotestore.RemoteStorePinnedTimestampService;
 import org.opensearch.plugins.BlobContainerInterceptorPlugin;
+import org.opensearch.repositories.blobstore.BlobStoreRepository;
 import org.opensearch.repositories.blobstore.MeteredBlobStoreRepository;
 import org.opensearch.snapshots.SnapshotsService;
 import org.opensearch.threadpool.ThreadPool;
@@ -720,8 +721,8 @@ public class RepositoriesService extends AbstractLifecycleComponent implements C
             repository = factory.create(repositoryMetadata, factories::get);
             repository.start();
 
-            if (Objects.nonNull(interceptorRegistry)) {
-                repository.registerInterceptors(interceptorRegistry);
+            if (Objects.nonNull(interceptorRegistry) && repository instanceof BlobStoreRepository) {
+                ((BlobStoreRepository) repository).registerInterceptors(interceptorRegistry);
             }
             return repository;
         } catch (Exception e) {

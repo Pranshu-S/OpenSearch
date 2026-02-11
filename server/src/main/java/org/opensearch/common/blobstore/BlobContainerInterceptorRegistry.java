@@ -8,6 +8,7 @@
 
 package org.opensearch.common.blobstore;
 
+import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.common.settings.Settings;
 
 import java.util.ArrayList;
@@ -16,7 +17,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Registry for blob container interceptors used in chaos testing
+ * @opensearch.internal
  */
+@ExperimentalApi
 public class BlobContainerInterceptorRegistry {
 
     private final List<BlobContainerInterceptor> interceptors = new CopyOnWriteArrayList<>();

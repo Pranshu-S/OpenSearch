@@ -8,6 +8,10 @@
 
 package org.opensearch.common.blobstore;
 
+import org.opensearch.cluster.metadata.CryptoMetadata;
+import org.opensearch.common.Nullable;
+import org.opensearch.common.annotation.ExperimentalApi;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.FileAlreadyExistsException;
@@ -94,6 +98,9 @@ public class InterceptingBlobContainer implements BlobContainer {
      */
     @Override
     public void writeBlob(String blobName, InputStream inputStream, long blobSize, boolean failIfAlreadyExists) throws IOException {
+        interceptors.forEach(
+            interceptor -> interceptor.interceptWriteBlob(blobName, inputStream, blobSize, failIfAlreadyExists)
+        );
         delegate.writeBlob(blobName, inputStream, blobSize, failIfAlreadyExists);
     }
 
@@ -177,4 +184,57 @@ public class InterceptingBlobContainer implements BlobContainer {
     public Map<String, BlobMetadata> listBlobsByPrefix(String blobNamePrefix) throws IOException {
         return delegate.listBlobsByPrefix(blobNamePrefix);
     }
+
+    /**
+     * Reads blob content from the input stream and writes it to the container in a new blob with the given name, and metadata.
+     * This method assumes the container does not already contain a blob of the same blobName. If a blob by the
+     * same name already exists, the operation will fail and an {@link IOException} will be thrown.
+     *
+     * @param   blobName
+     *          The name of the blob to write the contents of the input stream to.
+     * @param   inputStream
+     *          The input stream from which to retrieve the bytes to write to the blob.
+     * @param   metadata
+     *          The metadata to be associate with the blob upload.
+     * @param   blobSize
+     *          The size of the blob to be written, in bytes.  It is implementation dependent whether
+     *          this value is used in writing the blob to the repository.
+     * @param   failIfAlreadyExists
+     *          whether to throw a FileAlreadyExistsException if the given blob already exists
+     * @throws  FileAlreadyExistsException if failIfAlreadyExists is true and a blob by the same name already exists
+     * @throws  IOException if the input stream could not be read, or the target blob could not be written to.
+     */
+    @Override
+    public void writeBlobWithMetadata(String blobName, InputStream inputStream, long blobSize, boolean failIfAlreadyExists, Map<String, String> metadata) throws IOException {
+        delegate.writeBlobWithMetadata(blobName, inputStream, blobSize, failIfAlreadyExists, metadata);
+    }
+
+    /**
+     * Reads blob content from the input stream and writes it to the container in a new blob with the given name, metadata,
+     * and optional encryption settings for index-level encryption override.
+     * This method assumes the container does not already contain a blob of the same blobName. If a blob by the
+     * same name already exists, the operation will fail and an {@link IOException} will be thrown.
+     *
+     * @param   blobName
+     *          The name of the blob to write the contents of the input stream to.
+     * @param   inputStream
+     *          The input stream from which to retrieve the bytes to write to the blob.
+     * @param   blobSize
+     *          The size of the blob to be written, in bytes.  It is implementation dependent whether
+     *          this value is used in writing the blob to the repository.
+     * @param   failIfAlreadyExists
+     *          whether to throw a FileAlreadyExistsException if the given blob already exists
+     * @param   metadata
+     *          The metadata to be associate with the blob upload.
+     * @param   cryptoMetadata
+     *          Optional CryptoMetadata for index-level encryption override (null = use repository defaults)
+     * @throws  FileAlreadyExistsException if failIfAlreadyExists is true and a blob by the same name already exists
+     * @throws  IOException if the input stream could not be read, or the target blob could not be written to.
+     */
+
+    @Override
+    public void writeBlobWithMetadata(String blobName, InputStream inputStream, long blobSize, boolean failIfAlreadyExists, @Nullable Map<String, String> metadata, @Nullable CryptoMetadata cryptoMetadata
+    ) throws IOException {
+        delegate.writeBlobWithMetadata(blobName, inputStream, blobSize, failIfAlreadyExists, metadata, cryptoMetadata);
+    };
 }

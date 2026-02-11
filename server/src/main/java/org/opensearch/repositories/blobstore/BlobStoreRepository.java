@@ -141,6 +141,7 @@ import org.opensearch.node.remotestore.RemoteStorePinnedTimestampService;
 import org.opensearch.repositories.IndexId;
 import org.opensearch.repositories.IndexMetaDataGenerations;
 import org.opensearch.repositories.Repository;
+import org.opensearch.repositories.BlobContainerInterceptorRegistrar;
 import org.opensearch.repositories.RepositoryCleanupResult;
 import org.opensearch.repositories.RepositoryData;
 import org.opensearch.repositories.RepositoryException;
@@ -209,7 +210,7 @@ import static org.opensearch.snapshots.SnapshotShardPaths.getIndexId;
  *
  * @opensearch.internal
  */
-public abstract class BlobStoreRepository extends AbstractLifecycleComponent implements Repository {
+public abstract class BlobStoreRepository extends AbstractLifecycleComponent implements Repository, BlobContainerInterceptorRegistrar {
     private static final Logger logger = LogManager.getLogger(BlobStoreRepository.class);
 
     protected volatile RepositoryMetadata metadata;
