@@ -13,17 +13,21 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.ParameterizedMessage;
 import org.opensearch.Version;
 import org.opensearch.action.LatchedActionListener;
+import org.opensearch.action.support.PlainActionFuture;
 import org.opensearch.cluster.Diff;
 import org.opensearch.cluster.routing.IndexRoutingTable;
 import org.opensearch.cluster.routing.RoutingTable;
 import org.opensearch.cluster.routing.RoutingTableIncrementalDiff;
 import org.opensearch.cluster.routing.StringKeyDiffProvider;
+import org.opensearch.common.blobstore.AsyncMultiStreamBlobContainer;
 import org.opensearch.common.blobstore.BlobPath;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
 import org.opensearch.common.remote.RemoteWritableEntityStore;
 import org.opensearch.common.remote.RemoteWriteableEntityBlobStore;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.concurrent.FutureUtils;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.compress.Compressor;
@@ -43,8 +47,12 @@ import org.opensearch.threadpool.ThreadPool;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -68,6 +76,7 @@ public class InternalRemoteRoutingTableService extends AbstractLifecycleComponen
     private BlobStoreRepository blobStoreRepository;
     private final ThreadPool threadPool;
     private final String clusterName;
+    private static final TimeValue DEFAULT_DELETION_TIMEOUT = TimeValue.timeValueSeconds(300);
 
     public InternalRemoteRoutingTableService(
         Supplier<RepositoriesService> repositoriesService,
@@ -280,10 +289,37 @@ public class InternalRemoteRoutingTableService extends AbstractLifecycleComponen
     public void deleteStaleIndexRoutingDiffPaths(List<String> stalePaths) throws IOException {
         try {
             logger.debug(() -> "Deleting stale index routing diff files from remote - " + stalePaths);
-            blobStoreRepository.blobStore().blobContainer(BlobPath.cleanPath()).deleteBlobsIgnoringIfNotExists(stalePaths);
+            if (blobStoreRepository.blobStore().blobContainer(BlobPath.cleanPath()) instanceof AsyncMultiStreamBlobContainer) {
+                deleteAsyncInternal(stalePaths);
+            } else {
+                blobStoreRepository.blobStore().blobContainer(BlobPath.cleanPath()).deleteBlobsIgnoringIfNotExists(stalePaths);
+            }
         } catch (IOException e) {
             logger.error(() -> new ParameterizedMessage("Failed to delete some stale index routing diff paths from {}", stalePaths), e);
             throw e;
+        }
+    }
+
+    private void deleteAsyncInternal(List<String> fileNames) throws IOException {
+        PlainActionFuture<Void> future = new PlainActionFuture<>();
+        try {
+            ((AsyncMultiStreamBlobContainer) blobStoreRepository.blobStore().blobContainer(BlobPath.cleanPath()))
+                .deleteBlobsAsyncIgnoringIfNotExists(fileNames, future);
+            future.get(DEFAULT_DELETION_TIMEOUT.seconds(), TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Future got interrupted", e);
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof IOException) {
+                throw (IOException) e.getCause();
+            }
+            throw new RuntimeException(e.getCause());
+        } catch (TimeoutException e) {
+            FutureUtils.cancel(future);
+            throw new IOException(
+                String.format(Locale.ROOT, "Delete operation timed out after %s seconds", DEFAULT_DELETION_TIMEOUT.seconds()),
+                e
+            );
         }
     }
 }
