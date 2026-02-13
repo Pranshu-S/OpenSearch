@@ -20,6 +20,7 @@ import org.opensearch.cluster.routing.RoutingTable;
 import org.opensearch.cluster.routing.RoutingTableIncrementalDiff;
 import org.opensearch.cluster.routing.StringKeyDiffProvider;
 import org.opensearch.common.blobstore.AsyncMultiStreamBlobContainer;
+import org.opensearch.common.blobstore.BlobContainer;
 import org.opensearch.common.blobstore.BlobPath;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
 import org.opensearch.common.remote.RemoteWritableEntityStore;
@@ -279,7 +280,13 @@ public class InternalRemoteRoutingTableService extends AbstractLifecycleComponen
     public void deleteStaleIndexRoutingPaths(List<String> stalePaths) throws IOException {
         try {
             logger.debug(() -> "Deleting stale index routing files from remote - " + stalePaths);
-            blobStoreRepository.blobStore().blobContainer(BlobPath.cleanPath()).deleteBlobsIgnoringIfNotExists(stalePaths);
+            BlobContainer blobContainerForDeletion = blobStoreRepository.blobStore().blobContainer(BlobPath.cleanPath());
+            assert blobContainerForDeletion != null;
+            if (blobContainerForDeletion instanceof AsyncMultiStreamBlobContainer) {
+                deleteAsyncInternal((AsyncMultiStreamBlobContainer) blobContainerForDeletion, stalePaths, DEFAULT_DELETION_TIMEOUT);
+            } else {
+                blobContainerForDeletion.deleteBlobsIgnoringIfNotExists(stalePaths);
+            }
         } catch (IOException e) {
             logger.error(() -> new ParameterizedMessage("Failed to delete some stale index routing paths from {}", stalePaths), e);
             throw e;
@@ -289,10 +296,11 @@ public class InternalRemoteRoutingTableService extends AbstractLifecycleComponen
     public void deleteStaleIndexRoutingDiffPaths(List<String> stalePaths) throws IOException {
         try {
             logger.debug(() -> "Deleting stale index routing diff files from remote - " + stalePaths);
+            BlobContainer blobContainerForDeletion = blobStoreRepository.blobStore().blobContainer(BlobPath.cleanPath());
             if (blobStoreRepository.blobStore().blobContainer(BlobPath.cleanPath()) instanceof AsyncMultiStreamBlobContainer) {
-                deleteAsyncInternal(stalePaths);
+                deleteAsyncInternal((AsyncMultiStreamBlobContainer) blobContainerForDeletion, stalePaths, DEFAULT_DELETION_TIMEOUT);
             } else {
-                blobStoreRepository.blobStore().blobContainer(BlobPath.cleanPath()).deleteBlobsIgnoringIfNotExists(stalePaths);
+                blobContainerForDeletion.deleteBlobsIgnoringIfNotExists(stalePaths);
             }
         } catch (IOException e) {
             logger.error(() -> new ParameterizedMessage("Failed to delete some stale index routing diff paths from {}", stalePaths), e);
@@ -300,12 +308,12 @@ public class InternalRemoteRoutingTableService extends AbstractLifecycleComponen
         }
     }
 
-    private void deleteAsyncInternal(List<String> fileNames) throws IOException {
+    private void deleteAsyncInternal(AsyncMultiStreamBlobContainer blobContainerForDeletion, List<String> fileNames, TimeValue timeout)
+        throws IOException {
         PlainActionFuture<Void> future = new PlainActionFuture<>();
         try {
-            ((AsyncMultiStreamBlobContainer) blobStoreRepository.blobStore().blobContainer(BlobPath.cleanPath()))
-                .deleteBlobsAsyncIgnoringIfNotExists(fileNames, future);
-            future.get(DEFAULT_DELETION_TIMEOUT.seconds(), TimeUnit.SECONDS);
+            blobContainerForDeletion.deleteBlobsAsyncIgnoringIfNotExists(fileNames, future);
+            future.get(timeout.seconds(), TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Future got interrupted", e);

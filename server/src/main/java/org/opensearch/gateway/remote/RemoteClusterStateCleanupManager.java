@@ -17,6 +17,7 @@ import org.opensearch.cluster.routing.remote.RemoteRoutingTableService;
 import org.opensearch.cluster.service.ClusterApplierService;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.blobstore.AsyncMultiStreamBlobContainer;
+import org.opensearch.common.blobstore.BlobContainer;
 import org.opensearch.common.blobstore.BlobMetadata;
 import org.opensearch.common.blobstore.BlobPath;
 import org.opensearch.common.settings.ClusterSettings;
@@ -553,19 +554,21 @@ public class RemoteClusterStateCleanupManager implements Closeable {
     // package private for testing
     void deleteStalePaths(List<String> stalePaths) throws IOException {
         logger.debug(String.format(Locale.ROOT, "Deleting stale files from remote - %s", stalePaths));
-        if (remoteClusterStateService.getBlobStore().blobContainer(BlobPath.cleanPath()) instanceof AsyncMultiStreamBlobContainer) {
-            deleteAsyncInternal(stalePaths);
+        BlobContainer blobContainerForDeletion = remoteClusterStateService.getBlobStore().blobContainer(BlobPath.cleanPath());
+        assert blobContainerForDeletion != null;
+        if (blobContainerForDeletion instanceof AsyncMultiStreamBlobContainer) {
+            deleteAsyncInternal((AsyncMultiStreamBlobContainer) blobContainerForDeletion, stalePaths, DEFAULT_DELETION_TIMEOUT);
         } else {
             getBlobStoreTransferService().deleteBlobs(BlobPath.cleanPath(), stalePaths);
         }
     }
 
-    private void deleteAsyncInternal(List<String> fileNames) throws IOException {
+    private void deleteAsyncInternal(AsyncMultiStreamBlobContainer blobContainerForDeletion, List<String> fileNames, TimeValue timeout)
+        throws IOException {
         PlainActionFuture<Void> future = new PlainActionFuture<>();
         try {
-            ((AsyncMultiStreamBlobContainer) remoteClusterStateService.getBlobStore().blobContainer(BlobPath.cleanPath()))
-                .deleteBlobsAsyncIgnoringIfNotExists(fileNames, future);
-            future.get(DEFAULT_DELETION_TIMEOUT.seconds(), TimeUnit.SECONDS);
+            blobContainerForDeletion.deleteBlobsAsyncIgnoringIfNotExists(fileNames, future);
+            future.get(timeout.seconds(), TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Future got interrupted", e);
